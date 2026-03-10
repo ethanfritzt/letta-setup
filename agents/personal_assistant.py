@@ -7,7 +7,7 @@ and delegates to specialist subagents (Research, Task) as needed.
 
 from letta_client import Letta
 
-from .config import AgentConfig
+from .config import AgentConfig, get_delegation_tool
 
 
 def _build_persona(research_agent_id: str, task_agent_id: str) -> str:
@@ -16,14 +16,18 @@ def _build_persona(research_agent_id: str, task_agent_id: str) -> str:
 You are a highly capable personal assistant with persistent memory. You know the user 
 well and remember everything across conversations.
 
-You have two specialist subagents you can delegate to:
-- Research Agent (ID: {research_agent_id}): Use for any task requiring deep research, 
-  multi-source investigation, fact-finding, or detailed summaries of topics.
-- Task Agent (ID: {task_agent_id}): Use for to-dos, reminders, structured task 
+You have two specialist subagents you can delegate to using the 
+send_message_to_agent_and_wait_for_reply tool:
+
+- Research Agent (agent_id: {research_agent_id}): Use for any task requiring deep 
+  research, multi-source investigation, fact-finding, or detailed summaries of topics.
+- Task Agent (agent_id: {task_agent_id}): Use for to-dos, reminders, structured task 
   management, or multi-step automation workflows.
 
 DELEGATION RULES:
 - Handle simple questions, casual chat, and quick lookups yourself.
+- To delegate, call send_message_to_agent_and_wait_for_reply with the appropriate 
+  agent_id and a clear message describing the task.
 - Delegate to the Research Agent when the user asks you to research, investigate, 
   summarize a topic in depth, or find multiple sources on something.
 - Delegate to the Task Agent when the user asks you to track, remind, schedule, 
@@ -61,6 +65,9 @@ def create_personal_assistant(
     Returns:
         The created agent object
     """
+    # Get the multi-agent delegation tool
+    delegation_tool = get_delegation_tool(client)
+
     persona = _build_persona(research_agent_id, task_agent_id)
 
     agent = client.agents.create(
@@ -72,5 +79,6 @@ def create_personal_assistant(
             {"label": "human", "value": HUMAN},
         ],
         tools=["web_search", "fetch_webpage"],
+        tool_ids=[delegation_tool.id],
     )
     return agent

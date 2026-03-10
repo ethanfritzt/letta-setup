@@ -20,7 +20,7 @@ Environment variables:
     LETTA_EMBEDDING - Embedding model (default: openai/text-embedding-3-small)
 """
 
-from .config import get_config, get_client
+from .config import get_config, get_client, get_mcp_tool_ids
 from .research_agent import create_research_agent
 from .task_agent import create_task_agent
 from .personal_assistant import create_personal_assistant
@@ -41,12 +41,20 @@ def create_all_agents():
     print(f"Using embedding: {config.embedding}")
     print()
 
+    # Fetch MCP tools for TaskAgent (e.g., GitHub)
+    github_tool_ids = get_mcp_tool_ids(client, "github")
+    if github_tool_ids:
+        print(f"Found {len(github_tool_ids)} GitHub MCP tools")
+    else:
+        print("No GitHub MCP server found (TaskAgent will work without GitHub tools)")
+    print()
+
     # 1. Create Research Agent first (PA depends on its ID)
     research_agent = create_research_agent(client, config)
     print(f"Research Agent created:      {research_agent.id}")
 
     # 2. Create Task Agent (PA depends on its ID)
-    task_agent = create_task_agent(client, config)
+    task_agent = create_task_agent(client, config, mcp_tool_ids=github_tool_ids)
     print(f"Task Agent created:          {task_agent.id}")
 
     # 3. Create Personal Assistant (depends on both subagent IDs)

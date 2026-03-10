@@ -21,7 +21,8 @@ services:
   # ── Discord Bot (official letta-discord-bot-example) ──────────────
   discord-bot:
     build:
-      context: ./letta-discord-bot-example
+      context: .
+      dockerfile: Dockerfile.discord-bot
     container_name: letta-discord-bot
     env_file:
       - .env

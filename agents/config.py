@@ -34,3 +34,55 @@ def get_client(config: AgentConfig | None = None) -> Letta:
     if config is None:
         config = get_config()
     return Letta(base_url=config.base_url)
+
+
+def get_delegation_tool(client: Letta):
+    """
+    Fetch the built-in multi-agent delegation tool.
+
+    This tool allows an agent to send a message to another agent
+    and wait for its response (synchronous delegation).
+
+    Args:
+        client: Letta client instance
+
+    Returns:
+        The send_message_to_agent_and_wait_for_reply tool object
+
+    Raises:
+        RuntimeError: If the tool is not found on the server
+    """
+    tools = client.tools.list(name="send_message_to_agent_and_wait_for_reply")
+    if not tools.items:
+        raise RuntimeError(
+            "Multi-agent delegation tool not found. "
+            "Ensure your Letta server version supports multi-agent features."
+        )
+    return tools.items[0]
+
+
+def get_mcp_tool_ids(client: Letta, server_name: str) -> list[str]:
+    """
+    Fetch tool IDs from an MCP server by name (case-insensitive partial match).
+
+    This allows agents to use tools provided by MCP servers (e.g., GitHub, Slack).
+    Returns an empty list if the server is not found, allowing graceful degradation.
+
+    Args:
+        client: Letta client instance
+        server_name: Name (or partial name) of the MCP server to match
+
+    Returns:
+        List of tool IDs from the matching MCP server, or empty list if not found
+    """
+    try:
+        mcp_servers = client.mcp.list()
+        for server in mcp_servers:
+            if server_name.lower() in server.server_name.lower():
+                # Get tools associated with this MCP server
+                tools = client.tools.list(mcp_server_id=server.id)
+                tool_ids = [t.id for t in tools]
+                return tool_ids
+    except Exception as e:
+        print(f"Warning: Could not fetch MCP tools for '{server_name}': {e}")
+    return []
