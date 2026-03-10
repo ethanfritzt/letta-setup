@@ -25,7 +25,7 @@ def get_config() -> AgentConfig:
     return AgentConfig(
         base_url=os.getenv("LETTA_BASE_URL", "http://localhost:8283"),
         model=os.getenv("LETTA_MODEL", "anthropic/claude-sonnet-4-6"),
-        embedding=os.getenv("LETTA_EMBEDDING", "openai/text-embedding-3-small"),
+        embedding=os.getenv("LETTA_EMBEDDING", "letta/letta-free"),
     )
 
 
