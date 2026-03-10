@@ -1,0 +1,3 @@
+[submodule "letta-discord-bot-example"]
+	path = letta-discord-bot-example
+	url = https://github.com/letta-ai/letta-discord-bot-example.git

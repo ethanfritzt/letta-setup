@@ -1,0 +1,15 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Node
+letta-discord-bot-example/node_modules/
+
+# OS
+.DS_Store
+EOF

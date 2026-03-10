@@ -1,0 +1,35 @@
+services:
+
+  # ── Letta Server ──────────────────────────────────────────────────
+  letta-server:
+    image: letta/letta:latest
+    container_name: letta-server
+    ports:
+      - "8283:8283"
+    volumes:
+      - ~/.letta/.persist/pgdata:/var/lib/postgresql/data
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8283/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ── Discord Bot (official letta-discord-bot-example) ──────────────
+  discord-bot:
+    build:
+      context: ./letta-discord-bot-example
+    container_name: letta-discord-bot
+    env_file:
+      - .env
+    environment:
+      # Override LETTA_BASE_URL so the bot reaches the server
+      # by Docker service name, not localhost
+      - LETTA_BASE_URL=http://letta-server:8283
+    depends_on:
+      letta-server:
+        condition: service_healthy
+    restart: unless-stopped
