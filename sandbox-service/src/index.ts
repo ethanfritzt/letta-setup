@@ -10,7 +10,7 @@
  */
 
 import express, { Request, Response } from "express";
-import { prompt } from "@letta-ai/letta-code-sdk";
+import { createSession } from "@letta-ai/letta-code-sdk";
 import { execSync, spawn } from "child_process";
 import { mkdtempSync, rmSync, existsSync } from "fs";
 import path from "path";
@@ -62,13 +62,27 @@ async function executeCodingTask(
 ): Promise<string> {
   console.log(`Executing task in ${workdir}: "${task.substring(0, 100)}..."`);
 
-  const result = await prompt(task, {
+  const session = createSession(undefined, {
     cwd: workdir,
     permissionMode: "bypassPermissions", // Headless mode - no human approval needed
     disallowedTools: ["AskUserQuestion"], // Can't interact with human in headless mode
   });
 
-  return result.result || "Task completed successfully.";
+  try {
+    await session.send(task);
+
+    let resultText = "Task completed successfully.";
+    for await (const msg of session.stream()) {
+      if (msg.type === "result") {
+        resultText = msg.result || resultText;
+        break;
+      }
+    }
+
+    return resultText;
+  } finally {
+    session.close();
+  }
 }
 
 /**
