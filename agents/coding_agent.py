@@ -189,7 +189,6 @@ def create_coding_agent(
         print(f"  Using existing execute_coding_task tool: {coding_tool.id}")
     else:
         coding_tool = client.tools.create(
-            name="execute_coding_task",
             source_code=EXECUTE_CODING_TASK_SOURCE,
         )
         print(f"  Created execute_coding_task tool: {coding_tool.id}")
