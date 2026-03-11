@@ -1,27 +1,262 @@
-# Letta Setup
+# Letta Multi-Agent Setup
 
-Docker setup for Letta server with a Discord bot and multi-agent system.
+Docker-based deployment for a Letta multi-agent system with Discord bot interface, featuring:
+- **Supervisor-worker orchestration** following Letta best practices
+- **Shared knowledge base** across all agents
+- **Sandboxed coding agent** for safe code execution
+- **MCP integrations** for GitHub, Home Assistant, and Obsidian
 
-## Setup
+## Architecture
 
-1. Copy env template and add your API keys:
-   ```
-   cp env.template .env
-   ```
+```
+User (Discord)
+     |
+     v
+Personal Assistant (supervisor)
+  - Handles simple queries directly
+  - Delegates complex tasks via tag-based routing
+  - Searches shared knowledge before delegating
+     |
+     +-- Research Agent (tags: worker, research)
+     |     - Deep research, web search, fact-finding
+     |     - Stores findings with [research] tag
+     |
+     +-- Task Agent (tags: worker, task)
+     |     - To-dos, reminders, workflows
+     |     - GitHub operations, Obsidian notes
+     |     - Stores entries with [task] tag
+     |
+     +-- Coding Agent (tags: worker, coding)
+     |     - Sandboxed code execution
+     |     - Clone repos, fix bugs, run tests
+     |     - Stores decisions with [coding] tag
+     |           |
+     |           v
+     |     Coding Sandbox Service (Docker)
+     |           |
+     |           v
+     |     Letta Code SDK (isolated container)
+     |
+     +-- HomeAssistant Agent (tags: worker, smarthome)
+           - Smart home configuration
+           - Dashboards, automations, devices
+           - Stores changes with [smarthome] tag
 
-2. Start the services:
-   ```
-   docker compose up -d
-   ```
+Shared Resources:
+  - Guidelines block: Coordination rules (all agents)
+  - Status block: Task tracking (all agents)  
+  - Shared archive: Cross-agent knowledge base
+```
 
-3. Create the agents:
-   ```
-   python -m agents.create_all
-   ```
+## Prerequisites
 
-4. Add the Personal Assistant ID to your `.env` as `LETTA_AGENT_ID`
+- **Docker** and **Docker Compose**
+- **Python 3.10+** with `pip`
+- **Git** with submodule support
+- API keys (see Environment Variables below)
 
-5. Restart the Discord bot:
-   ```
-   docker compose restart discord-bot
-   ```
+## Quick Start
+
+### 1. Clone the repository
+
+```bash
+git clone --recurse-submodules https://github.com/YOUR_ORG/letta-setup.git
+cd letta-setup
+```
+
+If you already cloned without `--recurse-submodules`:
+
+```bash
+git submodule update --init --recursive
+```
+
+### 2. Configure environment
+
+```bash
+cp env.template .env
+```
+
+Edit `.env` and add your API keys:
+
+```bash
+# Required
+ANTHROPIC_API_KEY=sk-ant-...
+DISCORD_TOKEN=...
+DISCORD_APPLICATION_ID=...
+DISCORD_PUBLIC_KEY=...
+
+# Set after running agent setup (step 4)
+LETTA_AGENT_ID=agent-...
+```
+
+### 3. Start services
+
+```bash
+docker compose up -d
+```
+
+This starts:
+- `letta-server` — Letta API server (port 8283)
+- `coding-sandbox` — Sandboxed coding environment
+- `discord-bot` — Discord interface (will fail until agent ID is set)
+
+Wait for the Letta server to be healthy:
+
+```bash
+docker compose logs -f letta-server
+# Wait for "Application startup complete"
+```
+
+### 4. Set up agents
+
+Install the Letta client and run the setup script:
+
+```bash
+pip install letta-client
+python -m agents.create_all
+```
+
+This creates all agents and shared resources. Copy the printed `LETTA_AGENT_ID` to your `.env` file.
+
+### 5. Restart Discord bot
+
+```bash
+docker compose restart discord-bot
+```
+
+Your bot is now live! Talk to it on Discord.
+
+## Re-running Setup (Idempotent)
+
+The setup script is **idempotent** — you can run it multiple times safely:
+
+```bash
+python -m agents.create_all
+```
+
+On re-run:
+- **Existing agents are updated** (model, tools, rules) — conversation history preserved
+- **Existing shared resources are reused** (blocks, archives, MCP servers)
+- **New resources are created only if they don't exist**
+
+This is useful for:
+- Applying configuration changes (e.g., new model, updated personas)
+- Adding new MCP servers (just set the environment variables and re-run)
+- Recovering from partial setup failures
+
+## Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| `letta-server` | 8283 | Letta API server |
+| `coding-sandbox` | 3002 (internal) | Coding sandbox service |
+| `discord-bot` | — | Discord bot interface |
+
+## Agents
+
+| Agent | Tags | Role | Tools |
+|-------|------|------|-------|
+| **Personal Assistant** | supervisor, assistant | Orchestrator, user-facing | web_search, fetch_webpage, archival_memory_search, send_message_to_agents_matching_tags |
+| **Research Agent** | worker, research | Deep research | web_search, fetch_webpage, archival_memory_* |
+| **Task Agent** | worker, task | Task management | web_search, archival_memory_*, GitHub MCP, Obsidian MCP |
+| **Coding Agent** | worker, coding | Code execution | archival_memory_*, execute_coding_task (sandbox) |
+| **HomeAssistant Agent** | worker, smarthome | Smart home config | archival_memory_*, Home Assistant MCP (~97 tools) |
+
+## Environment Variables
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude models |
+| `DISCORD_TOKEN` | Discord bot token |
+| `DISCORD_APPLICATION_ID` | Discord application ID |
+| `DISCORD_PUBLIC_KEY` | Discord public key |
+| `LETTA_AGENT_ID` | Personal Assistant agent ID (from setup script) |
+
+### Optional — Letta Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LETTA_BASE_URL` | `http://localhost:8283` | Letta server URL |
+| `LETTA_MODEL` | `anthropic/claude-sonnet-4-6` | LLM model for agents |
+| `LETTA_EMBEDDING` | `letta/letta-free` | Embedding model |
+
+### Optional — MCP Servers
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_MCP_TOKEN` | GitHub personal access token (repo scope) |
+| `HOMEASSISTANT_MCP_URL` | Home Assistant MCP server URL |
+| `HOMEASSISTANT_TOKEN` | Home Assistant long-lived access token |
+| `OBSIDIAN_VAULT_PATH` | Path to Obsidian vault |
+
+### Optional — Coding Sandbox
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TASK_TIMEOUT_MS` | `600000` | Coding task timeout (10 min) |
+
+## Usage Examples
+
+Talk to your Personal Assistant on Discord:
+
+**Research:**
+> "Research the latest developments in quantum computing"
+
+**Task management:**
+> "Create a GitHub issue for the authentication bug we discussed"
+
+**Coding:**
+> "Clone https://github.com/myorg/myapp and fix the failing tests"
+
+**Smart home:**
+> "Create an automation that turns on the porch light at sunset"
+
+The Personal Assistant delegates to the appropriate worker agent based on the task type.
+
+## Development
+
+### Viewing logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f letta-server
+docker compose logs -f discord-bot
+```
+
+### Rebuilding after changes
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+### Checking agent status
+
+You can view and manage agents via the Letta ADE at https://app.letta.com (connect to your local server) or via the API.
+
+## Troubleshooting
+
+### Discord bot not responding
+
+1. Check `LETTA_AGENT_ID` is set in `.env`
+2. Check bot has proper Discord permissions
+3. Check logs: `docker compose logs discord-bot`
+
+### Agent setup fails
+
+1. Ensure Letta server is healthy: `curl http://localhost:8283/v1/health`
+2. Check `ANTHROPIC_API_KEY` is valid
+3. Re-run setup (it's idempotent)
+
+### Coding tasks timeout
+
+Increase `TASK_TIMEOUT_MS` in `.env` (default is 10 minutes).
+
+## License
+
+MIT

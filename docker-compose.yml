@@ -10,12 +10,42 @@ services:
       - ~/.letta/.persist/pgdata:/var/lib/postgresql/data
     env_file:
       - .env
+    environment:
+      # The coding sandbox service URL for the custom tool
+      - SANDBOX_SERVICE_URL=http://coding-sandbox:3002
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8283/v1/health"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
+    restart: unless-stopped
+
+  # ── Coding Sandbox Service ────────────────────────────────────────
+  # Runs Letta Code SDK in an isolated environment for executing coding tasks.
+  # The CodingAgent's custom tool calls this service to run coding tasks.
+  coding-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.coding-sandbox
+    container_name: coding-sandbox
+    env_file:
+      - .env
+    environment:
+      # Connect back to Letta server for LLM calls and memory
+      - LETTA_BASE_URL=http://letta-server:8283
+      - PORT=3002
+      - WORKSPACE_ROOT=/workspace
+      - TASK_TIMEOUT_MS=600000
+    depends_on:
+      letta-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   # ── Discord Bot (official letta-discord-bot-example) ──────────────
@@ -32,5 +62,7 @@ services:
       - LETTA_BASE_URL=http://letta-server:8283
     depends_on:
       letta-server:
+        condition: service_healthy
+      coding-sandbox:
         condition: service_healthy
     restart: unless-stopped

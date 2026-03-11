@@ -1,0 +1,85 @@
+# Coding Sandbox Service
+# Runs the Letta Code SDK in a sandboxed environment for executing coding tasks.
+#
+# Features:
+#   - Node.js 20 runtime
+#   - Git and common development tools
+#   - Letta Code CLI for coding agent capabilities
+#   - Express API for receiving tasks from the Letta server
+#
+# Environment variables:
+#   - LETTA_BASE_URL: URL of the Letta server (required)
+#   - PORT: Port to listen on (default: 3002)
+#   - WORKSPACE_ROOT: Directory for ephemeral workspaces (default: /workspace)
+#   - TASK_TIMEOUT_MS: Task timeout in milliseconds (default: 600000)
+
+# ── Build stage ────────────────────────────────────────────────────────────────
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY sandbox-service/package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm ci
+
+# Copy source code
+COPY sandbox-service/tsconfig.json ./
+COPY sandbox-service/src ./src
+
+# Build TypeScript
+RUN npm run build
+
+# ── Production stage ───────────────────────────────────────────────────────────
+FROM node:20-slim
+
+# Install development tools that the coding agent might need
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    build-essential \
+    python3 \
+    python3-pip \
+    python3-venv \
+    openssh-client \
+    jq \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Configure git for the container
+RUN git config --global user.email "coding-agent@letta.local" \
+    && git config --global user.name "Coding Agent" \
+    && git config --global init.defaultBranch main
+
+# Install Letta Code CLI globally
+RUN npm install -g @letta-ai/letta-code
+
+# Create workspace directory for ephemeral coding sessions
+RUN mkdir -p /workspace && chmod 777 /workspace
+
+WORKDIR /app
+
+# Copy package files and install production dependencies only
+COPY sandbox-service/package*.json ./
+RUN npm ci --omit=dev
+
+# Copy built artifacts from builder stage
+COPY --from=builder /app/dist ./dist
+
+# Default environment variables
+ENV PORT=3002
+ENV WORKSPACE_ROOT=/workspace
+ENV TASK_TIMEOUT_MS=600000
+
+# Expose the API port
+EXPOSE 3002
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3002/health || exit 1
+
+# Run the service
+CMD ["npm", "start"]
