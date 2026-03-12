@@ -89,7 +89,7 @@ async function discoverSharedBlocks(): Promise<SharedBlockIds> {
 
 /**
  * Cached worker agent ID. Created once, reused across tasks.
- * Messages are reset between tasks to keep context clean.
+ * Each task gets a fresh conversation via createSession() for clean context.
  */
 let codingWorkerId: string | null = null;
 let sharedBlocks: SharedBlockIds | null = null;
@@ -111,11 +111,25 @@ When working on coding tasks:
  * Get or create the persistent Letta Code worker agent.
  *
  * The worker is created once with shared blocks from the Letta hierarchy,
- * then reused. Messages are reset after each task for clean context.
+ * then reused. Each task gets a fresh conversation via createSession().
+ *
+ * Validates the cached agent ID still exists on the Letta server before
+ * returning it — handles cases where the agent was deleted (e.g., after
+ * a server database reset or manual cleanup).
  */
 async function getOrCreateWorker(): Promise<string> {
   if (codingWorkerId) {
-    return codingWorkerId;
+    // Validate the cached agent still exists on the Letta server
+    try {
+      const resp = await fetch(`${LETTA_BASE_URL}/v1/agents/${codingWorkerId}`);
+      if (resp.ok) {
+        return codingWorkerId;
+      }
+      console.warn(`Cached worker agent ${codingWorkerId} no longer exists (HTTP ${resp.status}), recreating...`);
+    } catch (error) {
+      console.warn(`Failed to validate cached worker agent ${codingWorkerId}:`, error);
+    }
+    codingWorkerId = null;
   }
 
   // Discover shared blocks on first call
@@ -150,32 +164,9 @@ async function getOrCreateWorker(): Promise<string> {
   return codingWorkerId;
 }
 
-/**
- * Reset the worker agent's message history via the Letta API.
- *
- * This clears conversation context while preserving the agent's identity,
- * memory blocks, and configuration. Keeps context clean between tasks.
- */
-async function resetWorkerMessages(agentId: string): Promise<void> {
-  try {
-    const response = await fetch(
-      `${LETTA_BASE_URL}/v1/agents/${agentId}/messages/reset`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ add_default_initial_messages: true }),
-      }
-    );
-
-    if (response.ok) {
-      console.log(`Reset messages for worker: ${agentId}`);
-    } else {
-      console.warn(`Failed to reset messages: HTTP ${response.status}`);
-    }
-  } catch (error) {
-    console.warn("Could not reset worker messages:", error);
-  }
-}
+// Note: resetWorkerMessages was removed. Each task now gets a fresh
+// conversation via createSession(agentId), which is the documented Letta
+// pattern for isolating task context while preserving agent memory.
 
 // =============================================================================
 // Skills Management
@@ -269,7 +260,7 @@ function cloneRepo(repoUrl: string, targetDir: string, branch?: string): void {
  *
  * Uses a persistent worker agent with shared blocks from the Letta hierarchy.
  * Skills are copied into the workspace for automatic discovery.
- * Worker messages are reset after each task for clean context.
+ * Each task gets a fresh conversation via createSession() to isolate context.
  */
 async function executeCodingTask(
   task: string,
@@ -303,9 +294,6 @@ async function executeCodingTask(
     return resultText;
   } finally {
     session.close();
-
-    // Reset worker messages for clean context on next task
-    await resetWorkerMessages(agentId);
   }
 }
 
