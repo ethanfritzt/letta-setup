@@ -8,7 +8,7 @@ __pycache__/
 .venv/
 
 # Node
-letta-discord-bot-example/node_modules/
+node_modules/
 
 # OS
 .DS_Store

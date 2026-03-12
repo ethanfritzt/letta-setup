@@ -25,7 +25,7 @@ Environment variables:
     LETTA_BASE_URL          - Letta server URL (default: http://localhost:8283)
     LETTA_MODEL             - LLM model (default: anthropic/claude-sonnet-4-6)
     LETTA_EMBEDDING         - Embedding model (default: letta/letta-free)
-    GITHUB_MCP_TOKEN        - GitHub personal access token (optional)
+    GH_TOKEN                - GitHub personal access token (optional)
     HOMEASSISTANT_MCP_URL   - Home Assistant MCP server URL (optional)
     HOMEASSISTANT_TOKEN     - Home Assistant long-lived access token (optional)
     OBSIDIAN_VAULT_PATH     - Path to Obsidian vault (optional)

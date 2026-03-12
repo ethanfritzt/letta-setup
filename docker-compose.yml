@@ -2,7 +2,7 @@ services:
 
   # ── Letta Server ──────────────────────────────────────────────────
   letta-server:
-    image: letta/letta:latest
+    image: letta/letta:0.16.6
     container_name: letta-server
     ports:
       - "8283:8283"
