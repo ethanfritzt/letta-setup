@@ -59,9 +59,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure git for the container
-RUN git config --global user.email "coding-agent@letta.local" \
-    && git config --global user.name "Coding Agent" \
+# Configure git identity for the bot
+RUN git config --global user.email "letta-code[bot]@users.noreply.github.com" \
+    && git config --global user.name "Letta Code" \
     && git config --global init.defaultBranch main
 
 # Install Letta Code CLI globally
@@ -78,6 +78,11 @@ RUN npm install --omit=dev
 
 # Copy built artifacts from builder stage
 COPY --from=builder /app/dist ./dist
+
+# Copy custom skills for Letta Code (github-cli, etc.)
+# These are copied into each workspace's .skills/ directory at runtime
+# via the entrypoint script and the sandbox service.
+COPY agents/skills/ /app/skills/
 
 # Default environment variables
 ENV PORT=3002

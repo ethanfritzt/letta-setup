@@ -33,6 +33,9 @@ services:
     container_name: coding-sandbox
     env_file:
       - .env
+    volumes:
+      # Mount skills for live editing during development (overrides baked-in copy)
+      - ./agents/skills:/app/skills:ro
     environment:
       # Connect back to Letta server for LLM calls and memory
       - LETTA_BASE_URL=http://letta-server:8283
@@ -41,6 +44,8 @@ services:
       - TASK_TIMEOUT_MS=600000
       # GitHub authentication for cloning private repos and using gh CLI
       - GH_TOKEN=${GH_TOKEN:-}
+      # Skills source directory inside the container
+      - SKILLS_SOURCE=/app/skills
     depends_on:
       letta-server:
         condition: service_healthy
