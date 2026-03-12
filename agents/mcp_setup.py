@@ -85,9 +85,12 @@ def _get_server_tools(client: Letta, server_id: str) -> tuple[list[str], list[st
 
 def _register_github_mcp(client: Letta) -> MCPServerInfo | None:
     """
-    Find or register the GitHub MCP server (stdio transport).
+    Find or register the GitHub MCP server (streamable_http transport).
 
-    Requires: GITHUB_MCP_TOKEN environment variable.
+    Uses the GitHub Copilot API endpoint (api.githubcopilot.com) which provides
+    better streaming support than the stdio-based MCP server.
+
+    Requires: GITHUB_MCP_TOKEN environment variable (GitHub PAT).
     """
     token = os.getenv("GITHUB_MCP_TOKEN")
     if not token:
@@ -112,10 +115,10 @@ def _register_github_mcp(client: Letta) -> MCPServerInfo | None:
         server = client.mcp_servers.create(
             server_name="github",
             config={
-                "mcp_server_type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-github"],
-                "env": {"GITHUB_TOKEN": token},
+                "mcp_server_type": "streamable_http",
+                "server_url": "https://api.githubcopilot.com",
+                "auth_header": "Authorization",
+                "auth_token": f"Bearer {token}",
             }
         )
 
