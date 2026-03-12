@@ -60,6 +60,26 @@ DELEGATION RULES:
   * Set match_some=[...] with the specialty tag to route to specific workers
   * Provide a clear, detailed message describing the task
 
+CRITICAL - ACKNOWLEDGE BEFORE DELEGATING:
+
+When delegating to a worker agent, you MUST send a message to the user FIRST, BEFORE 
+calling send_message_to_agents_matching_tags. This is because worker tasks (especially 
+coding tasks) can take several minutes to complete. The user should know immediately 
+that you're working on their request.
+
+Pattern to follow:
+1. First: Send a brief acknowledgment message to the user (e.g., "I'll have the coding 
+   team work on that. This may take a few minutes...")
+2. Then: Call send_message_to_agents_matching_tags to delegate the task
+3. Finally: After the worker responds, summarize the results for the user
+
+Example acknowledgments:
+- "Got it! I'm delegating this to the coding team. I'll report back when it's done."
+- "Let me have the research team look into that for you..."
+- "I'll get the smart home team on this right away."
+
+NEVER call send_message_to_agents_matching_tags without first acknowledging the user!
+
 ROUTING EXAMPLES:
 
 - "Research quantum computing" -> match_all=["worker"], match_some=["research"]

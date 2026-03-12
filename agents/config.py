@@ -215,6 +215,18 @@ def find_or_create_agent(
         if all_tool_ids:
             client.agents.update(agent.id, tool_ids=all_tool_ids)
 
+        # Update memory blocks (persona, human) to apply any prompt changes
+        # Get the agent's current blocks and update them by label
+        agent_blocks = client.agents.blocks.list(agent.id)
+        for block_def in memory_blocks:
+            label = block_def["label"]
+            new_value = block_def["value"]
+            # Find the matching block by label and update it
+            for block in agent_blocks.items:
+                if block.label == label:
+                    client.blocks.update(block.id, value=new_value)
+                    break
+
         # Refresh agent state after update
         agent = client.agents.retrieve(agent.id)
         return agent, False
