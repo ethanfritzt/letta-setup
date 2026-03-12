@@ -182,11 +182,16 @@ This is useful for:
 | `LETTA_MODEL` | `anthropic/claude-sonnet-4-6` | LLM model for agents |
 | `LETTA_EMBEDDING` | `letta/letta-free` | Embedding model |
 
+### Optional — GitHub Access
+
+| Variable | Description |
+|----------|-------------|
+| `GH_TOKEN` | GitHub personal access token. Enables private repo access for the Coding Agent (via `gh` CLI) and GitHub MCP tools for the Task Agent. Create at https://github.com/settings/tokens with `repo` scope. |
+
 ### Optional — MCP Servers
 
 | Variable | Description |
 |----------|-------------|
-| `GITHUB_MCP_TOKEN` | GitHub personal access token (repo scope) |
 | `HOMEASSISTANT_MCP_URL` | Home Assistant MCP server URL |
 | `HOMEASSISTANT_TOKEN` | Home Assistant long-lived access token |
 | `OBSIDIAN_VAULT_PATH` | Path to Obsidian vault |

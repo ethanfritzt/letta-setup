@@ -39,6 +39,8 @@ services:
       - PORT=3002
       - WORKSPACE_ROOT=/workspace
       - TASK_TIMEOUT_MS=600000
+      # GitHub authentication for cloning private repos and using gh CLI
+      - GH_TOKEN=${GH_TOKEN:-}
     depends_on:
       letta-server:
         condition: service_healthy

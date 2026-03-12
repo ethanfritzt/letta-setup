@@ -90,11 +90,12 @@ def _register_github_mcp(client: Letta) -> MCPServerInfo | None:
     Uses the GitHub Copilot API endpoint (api.githubcopilot.com) which provides
     better streaming support than the stdio-based MCP server.
 
-    Requires: GITHUB_MCP_TOKEN environment variable (GitHub PAT).
+    Requires: GH_TOKEN environment variable (GitHub PAT).
+    Falls back to GITHUB_MCP_TOKEN for backwards compatibility.
     """
-    token = os.getenv("GITHUB_MCP_TOKEN")
+    token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_MCP_TOKEN")
     if not token:
-        print("Skipping GitHub MCP: GITHUB_MCP_TOKEN not set")
+        print("Skipping GitHub MCP: GH_TOKEN not set")
         return None
 
     try:

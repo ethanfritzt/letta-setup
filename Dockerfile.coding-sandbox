@@ -49,6 +49,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
+# Install GitHub CLI for authenticated git operations and GitHub API access
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
 # Configure git for the container
 RUN git config --global user.email "coding-agent@letta.local" \
     && git config --global user.name "Coding Agent" \
@@ -81,5 +91,10 @@ EXPOSE 3002
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3002/health || exit 1
 
-# Run the service
+# Copy and set up entrypoint script for GitHub authentication
+COPY sandbox-service/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Run the service via entrypoint (configures gh auth before starting)
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["npm", "start"]
