@@ -13,6 +13,8 @@ services:
     environment:
       # The coding sandbox service URL for the custom tool
       - SANDBOX_SERVICE_URL=http://coding-sandbox:3002
+      # Enable stdio MCP servers (GitHub, Obsidian via npx)
+      - MCP_DISABLE_STDIO=false
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8283/v1/health"]
       interval: 15s
