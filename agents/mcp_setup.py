@@ -116,7 +116,7 @@ def _register_github_mcp(client: Letta) -> MCPServerInfo | None:
             server_name="github",
             config={
                 "mcp_server_type": "streamable_http",
-                "server_url": "https://api.githubcopilot.com",
+                "server_url": "https://api.githubcopilot.com/mcp/",
                 "auth_header": "Authorization",
                 "auth_token": f"Bearer {token}",
             }
