@@ -223,20 +223,45 @@ interface CodeResponse {
 
 /**
  * Clone a git repository into the specified directory.
+ *
+ * Uses `gh repo clone` instead of `git clone` so that the GH_TOKEN
+ * environment variable is used automatically for authentication.
+ * This is required for private repositories and avoids interactive
+ * credential prompts that fail in non-interactive sandbox environments.
+ *
+ * Falls back to `git clone` for non-GitHub URLs.
  */
 function cloneRepo(repoUrl: string, targetDir: string, branch?: string): void {
-  const args = ["clone", "--depth", "1"];
-  if (branch) {
-    args.push("-b", branch);
-  }
-  args.push(repoUrl, targetDir);
-
   console.log(`Cloning ${repoUrl}${branch ? ` (branch: ${branch})` : ""} into ${targetDir}`);
 
-  execSync(`git ${args.join(" ")}`, {
-    timeout: 120000,
-    stdio: "pipe",
-  });
+  // Extract owner/repo from GitHub URLs (HTTPS or SSH)
+  const match = repoUrl.match(/github\.com[/:]([^/]+\/[^/.]+?)(?:\.git)?$/);
+
+  if (match) {
+    // Use gh repo clone for GitHub repos (handles auth via GH_TOKEN)
+    const ownerRepo = match[1];
+    const gitFlags = ["--depth", "1"];
+    if (branch) {
+      gitFlags.push("-b", branch);
+    }
+
+    execSync(`gh repo clone ${ownerRepo} ${targetDir} -- ${gitFlags.join(" ")}`, {
+      timeout: 120000,
+      stdio: "pipe",
+    });
+  } else {
+    // Fallback to git clone for non-GitHub URLs
+    const args = ["clone", "--depth", "1"];
+    if (branch) {
+      args.push("-b", branch);
+    }
+    args.push(repoUrl, targetDir);
+
+    execSync(`git ${args.join(" ")}`, {
+      timeout: 120000,
+      stdio: "pipe",
+    });
+  }
 }
 
 /**

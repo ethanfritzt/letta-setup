@@ -155,9 +155,18 @@ Results:
 
 ## Repository Operations
 
+**IMPORTANT:** Always use `gh repo clone` instead of `git clone`. The `gh` CLI
+authenticates automatically via the `GH_TOKEN` environment variable, which is
+required for private repositories and avoids interactive credential prompts that
+fail in non-interactive/sandboxed environments. Never use `git clone` for
+GitHub repositories.
+
 ```bash
-# Clone a repository
+# Clone a repository (ALWAYS use gh, never git clone)
 gh repo clone <OWNER>/<REPO>
+
+# Clone with additional git flags (e.g., shallow clone)
+gh repo clone <OWNER>/<REPO> -- --depth 1
 
 # Fork and clone
 gh repo fork <OWNER>/<REPO> --clone
