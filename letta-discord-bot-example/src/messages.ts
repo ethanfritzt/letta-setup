@@ -845,9 +845,40 @@ const processStream = async (
           case 'reasoning_message':
             console.log('🧠 Reasoning:', chunk);
             break;
-          case 'tool_call_message':
+          case 'tool_call_message': {
             console.log('🔧 Tool call:', chunk);
+            const toolName: string = chunk.tool_call?.name ?? '';
+            let statusMsg: string | null = null;
+
+            if (toolName === 'send_message_to_agents_matching_tags') {
+              // Detect which worker is being called from match_some tags
+              try {
+                const args = typeof chunk.tool_call?.arguments === 'string'
+                  ? JSON.parse(chunk.tool_call.arguments)
+                  : chunk.tool_call?.arguments ?? {};
+                const matchSome: string[] = args.match_some ?? [];
+                const workerLabel = matchSome.includes('research') ? 'Research'
+                  : matchSome.includes('coding') ? 'Coding'
+                  : matchSome.includes('task') ? 'Task'
+                  : matchSome.includes('smarthome') ? 'Smart Home'
+                  : 'Worker';
+                statusMsg = `_Delegating to ${workerLabel} agent..._`;
+              } catch {
+                statusMsg = '_Delegating to worker agent..._';
+              }
+            } else if (toolName === 'web_search') {
+              statusMsg = '_Searching the web..._';
+            } else if (toolName === 'fetch_webpage') {
+              statusMsg = '_Fetching page..._';
+            } else if (toolName === 'archival_memory_search') {
+              statusMsg = '_Searching memory..._';
+            }
+
+            if (statusMsg) {
+              await sendAsyncMessage(statusMsg);
+            }
             break;
+          }
           case 'tool_return_message':
             console.log('🔧 Tool return:', chunk);
             break;

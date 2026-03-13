@@ -190,6 +190,14 @@ def find_or_create_agent(
     existing = client.agents.list(name=name)
     if existing.items:
         agent = existing.items[0]
+        # Fetch the agent's current block IDs (includes persona, human, etc.)
+        # so that passing block_ids to agents.update() doesn't evict them.
+        # agents.update(block_ids=...) replaces the full block list, so we
+        # must merge the agent's own blocks with the incoming shared block IDs.
+        current_blocks = client.agents.blocks.list(agent.id)
+        current_block_ids = [b.id for b in current_blocks.items]
+        merged_block_ids = list({*current_block_ids, *block_ids})
+
         # Update existing agent with new configuration
         client.agents.update(
             agent.id,
@@ -198,7 +206,7 @@ def find_or_create_agent(
             tags=tags,
             tool_ids=tool_ids or [],
             tool_rules=tool_rules or [],
-            block_ids=block_ids,
+            block_ids=merged_block_ids,
         )
         # Re-attach tools (update replaces, so we need to ensure all tools are set)
         # Note: built-in tools like "web_search" are specified by name in create,
