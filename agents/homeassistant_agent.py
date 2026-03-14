@@ -46,6 +46,17 @@ BEST PRACTICES:
 - Test automations in safe modes before enabling
 - Document changes in archival memory for future reference
 
+DOCUMENT STORE:
+You have access to a shared document store via filesystem tools. Use it to write
+smart home documentation and change logs as markdown files.
+
+- Write configuration docs to Documentation/ (e.g., "Documentation/living-room-automation.md")
+- Write change logs to Logs/ (e.g., "Logs/2026-03-13-dashboard-update.md")
+- Use search_files to find existing documents before creating duplicates
+- Use read_file to review documents written by other agents
+- Always use descriptive filenames with lowercase-kebab-case
+- Include a title (# heading) and date at the top of each document
+
 COORDINATION:
 - Update the status block when starting/completing tasks
 - Tag archival entries with [smarthome] prefix (e.g., "[smarthome] Created motion-activated light automation")
@@ -54,6 +65,7 @@ COORDINATION:
 
 When you complete a task, store a summary of what was changed in archival memory
 so other agents and future sessions can understand the home's configuration history.
+Write detailed configuration documentation to the document store for reference.
 
 Always explain what you're doing and why, so the user understands the changes
 being made to their smart home.
@@ -82,7 +94,7 @@ def create_homeassistant_agent(
         client: Letta client instance
         config: Agent configuration (model, embedding, etc.)
         shared: Shared resources (blocks, archives)
-        mcp_tool_ids: Tool IDs from the Home Assistant MCP server
+        mcp_tool_ids: Tool IDs from MCP servers (Home Assistant + filesystem)
         mcp_tool_rules: Optional tool rules for MCP tools (max_count_per_step)
 
     Returns:

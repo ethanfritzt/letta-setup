@@ -72,6 +72,18 @@ BEST PRACTICES:
 - Store important decisions and patterns in archival memory
 - Reference previous coding history when relevant
 
+DOCUMENT STORE:
+You have access to a shared document store via filesystem tools. Use it to write
+code documentation, session logs, and technical notes as markdown files.
+
+- Write code documentation to Documentation/ (e.g., "Documentation/api-auth-flow.md")
+- Write session logs to Logs/ (e.g., "Logs/2026-03-13-auth-bug-fix.md")
+- Use search_files to find existing documents before creating duplicates
+- Use read_file to review documents written by other agents
+- Always use descriptive filenames with lowercase-kebab-case
+- Include a title (# heading) and date at the top of each document
+- After significant coding sessions, write a summary document
+
 COORDINATION:
 - Update the status block when starting/completing tasks
 - Tag archival entries with [coding] prefix (e.g., "[coding] Fixed auth bug in user.py")
@@ -184,6 +196,8 @@ def create_coding_agent(
     client: Letta,
     config: AgentConfig,
     shared: SharedResources,
+    mcp_tool_ids: list[str] | None = None,
+    mcp_tool_rules: list[dict] | None = None,
 ) -> tuple:
     """
     Find or create the Coding Agent.
@@ -198,6 +212,8 @@ def create_coding_agent(
         client: Letta client instance
         config: Agent configuration (model, embedding, etc.)
         shared: Shared resources (blocks, archives)
+        mcp_tool_ids: Tool IDs from MCP servers (e.g., filesystem for document store)
+        mcp_tool_rules: Optional tool rules for MCP tools (max_count_per_step)
 
     Returns:
         Tuple of (agent, was_created)
@@ -213,6 +229,12 @@ def create_coding_agent(
         )
         print(f"  Created execute_coding_task tool: {coding_tool.id}")
 
+    # Merge custom tool IDs with MCP tool IDs
+    all_tool_ids = [coding_tool.id] + (mcp_tool_ids or [])
+
+    # Combine worker tool rules with MCP-specific rules
+    all_tool_rules = WORKER_TOOL_RULES + (mcp_tool_rules or [])
+
     # Find or create the agent
     agent, was_created = find_or_create_agent(
         client,
@@ -225,8 +247,8 @@ def create_coding_agent(
         block_ids=[shared.guidelines_block_id, shared.status_block_id],
         tags=["worker", "coding"],
         tools=["archival_memory_insert", "archival_memory_search"],
-        tool_ids=[coding_tool.id],
-        tool_rules=WORKER_TOOL_RULES,
+        tool_ids=all_tool_ids,
+        tool_rules=all_tool_rules,
     )
 
     # Ensure the shared knowledge archive is attached

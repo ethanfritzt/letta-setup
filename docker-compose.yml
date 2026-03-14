@@ -13,7 +13,7 @@ services:
     environment:
       # The coding sandbox service URL for the custom tool
       - SANDBOX_SERVICE_URL=http://coding-sandbox:3002
-      # Enable stdio MCP servers (GitHub, Obsidian via npx)
+      # Enable stdio MCP servers (GitHub, filesystem via npx)
       - MCP_DISABLE_STDIO=false
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8283/v1/health"]
@@ -21,6 +21,20 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    restart: unless-stopped
+
+  # ── SilverBullet (Document Store) ────────────────────────────────
+  # Markdown-based document store with web UI. Agents write documents
+  # via the filesystem MCP server; you view/search them in the browser.
+  silverbullet:
+    image: zefhemel/silverbullet
+    container_name: silverbullet
+    ports:
+      - "${SILVERBULLET_PORT:-3001}:3000"
+    volumes:
+      - ${DOCUMENT_STORE_PATH:-./documents}:/space
+    environment:
+      - SB_USER=${SILVERBULLET_USER:-}
     restart: unless-stopped
 
   # ── Coding Sandbox Service ────────────────────────────────────────

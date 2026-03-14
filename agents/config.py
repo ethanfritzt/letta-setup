@@ -285,6 +285,24 @@ GUIDELINES_DEFAULT = """Coordination Guidelines:
 - Report task results clearly and concisely
 - Flag any errors or blockers immediately
 
+Document Store:
+All worker agents have access to a shared document store via filesystem tools.
+Documents are markdown files viewable in the SilverBullet web UI.
+
+Folder conventions (content-type based):
+- Reports/     — Research reports, summaries, analysis documents
+- Notes/       — Meeting notes, project notes, ongoing observations
+- Logs/        — Activity logs, change logs, session summaries
+- Documentation/ — Technical docs, how-tos, configuration references
+
+File naming: lowercase-kebab-case with dates where relevant
+  e.g., "Reports/quantum-computing-overview.md"
+  e.g., "Logs/2026-03-13-dashboard-update.md"
+
+Each document should start with a # heading and include the date.
+Use search_files before creating a document to avoid duplicates.
+Agents can read each other's documents for cross-agent context.
+
 User Preferences:
 - (Updated by Personal Assistant as user preferences are learned)
 """.strip()

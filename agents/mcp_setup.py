@@ -1,7 +1,7 @@
 """
 MCP Server Setup - Register external MCP servers with Letta.
 
-This module programmatically registers MCP servers (GitHub, Home Assistant, Obsidian)
+This module programmatically registers MCP servers (GitHub, Home Assistant, Filesystem)
 with the Letta server before agent creation. Each server is conditional on environment
 variables - if not set, the server is skipped gracefully.
 
@@ -9,7 +9,7 @@ The setup is idempotent — if a server is already registered, it will be reused
 rather than creating a duplicate.
 
 Supported transports:
-- stdio: For local MCP servers (GitHub, Obsidian via npx)
+- stdio: For local MCP servers (GitHub, Filesystem via npx)
 - streamable_http: For remote MCP servers (Home Assistant add-on)
 """
 
@@ -197,25 +197,29 @@ def _register_homeassistant_mcp(client: Letta) -> MCPServerInfo | None:
         return None
 
 
-def _register_obsidian_mcp(client: Letta) -> MCPServerInfo | None:
+def _register_filesystem_mcp(client: Letta) -> MCPServerInfo | None:
     """
-    Find or register the Obsidian MCP server (stdio transport).
+    Find or register the Filesystem MCP server (stdio transport).
 
-    Requires: OBSIDIAN_VAULT_PATH environment variable.
+    Provides file read/write/search/list tools for the document store
+    (SilverBullet data directory). Agents use these tools to create and
+    read markdown documents that are viewable in the SilverBullet web UI.
+
+    Requires: DOCUMENT_STORE_PATH environment variable.
     """
-    vault_path = os.getenv("OBSIDIAN_VAULT_PATH")
-    if not vault_path:
-        print("Skipping Obsidian MCP: OBSIDIAN_VAULT_PATH not set")
+    doc_path = os.getenv("DOCUMENT_STORE_PATH")
+    if not doc_path:
+        print("Skipping Filesystem MCP: DOCUMENT_STORE_PATH not set")
         return None
 
     try:
         # Check for existing server
-        existing = _find_existing_mcp_server(client, "obsidian")
+        existing = _find_existing_mcp_server(client, "filesystem")
         if existing:
             tool_ids, tool_names = _get_server_tools(client, existing.id)
-            print(f"Found existing Obsidian MCP: {len(tool_ids)} tools")
+            print(f"Found existing Filesystem MCP: {len(tool_ids)} tools")
             return MCPServerInfo(
-                name="obsidian",
+                name="filesystem",
                 server_id=existing.id,
                 tool_ids=tool_ids,
                 tool_names=tool_names,
@@ -223,20 +227,22 @@ def _register_obsidian_mcp(client: Letta) -> MCPServerInfo | None:
             )
 
         # Register new server
+        # The official @modelcontextprotocol/server-filesystem MCP server
+        # provides: read_file, write_file, create_directory, list_directory,
+        # move_file, search_files, get_file_info, list_allowed_directories, edit_file
         server = client.mcp_servers.create(
-            server_name="obsidian",
+            server_name="filesystem",
             config={
                 "mcp_server_type": "stdio",
                 "command": "npx",
-                "args": ["-y", "obsidian-mcp"],
-                "env": {"OBSIDIAN_VAULT_PATH": vault_path},
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", doc_path],
             }
         )
 
         tool_ids, tool_names = _get_server_tools(client, server.id)
-        print(f"Registered Obsidian MCP: {len(tool_ids)} tools")
+        print(f"Registered Filesystem MCP: {len(tool_ids)} tools")
         return MCPServerInfo(
-            name="obsidian",
+            name="filesystem",
             server_id=server.id,
             tool_ids=tool_ids,
             tool_names=tool_names,
@@ -244,7 +250,7 @@ def _register_obsidian_mcp(client: Letta) -> MCPServerInfo | None:
         )
 
     except Exception as e:
-        print(f"Warning: Failed to register Obsidian MCP: {e}")
+        print(f"Warning: Failed to register Filesystem MCP: {e}")
         return None
 
 
@@ -268,7 +274,7 @@ def setup_mcp_servers(client: Letta) -> dict[str, MCPServerInfo]:
     for name, register_fn in [
         ("github", _register_github_mcp),
         ("home-assistant", _register_homeassistant_mcp),
-        ("obsidian", _register_obsidian_mcp),
+        ("filesystem", _register_filesystem_mcp),
     ]:
         result = register_fn(client)
         if result:

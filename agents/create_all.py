@@ -3,7 +3,7 @@
 Letta Agent Setup Script
 
 Sets up all agents and shared resources in the correct order:
-  1. Register MCP servers (GitHub, Home Assistant, Obsidian)
+  1. Register MCP servers (GitHub, Home Assistant, Filesystem)
   2. Create shared memory blocks and archives
   3. Create worker agents (Research, Task, Coding, HomeAssistant)
   4. Create Personal Assistant (supervisor with tag-based routing)
@@ -28,7 +28,7 @@ Environment variables:
     GH_TOKEN                - GitHub personal access token (optional)
     HOMEASSISTANT_MCP_URL   - Home Assistant MCP server URL (optional)
     HOMEASSISTANT_TOKEN     - Home Assistant long-lived access token (optional)
-    OBSIDIAN_VAULT_PATH     - Path to Obsidian vault (optional)
+    DOCUMENT_STORE_PATH     - Path to document store / SilverBullet space (optional)
 """
 
 from .config import get_config, get_client, create_shared_resources, build_mcp_tool_rules
@@ -53,7 +53,7 @@ def create_all_agents():
     are reused/updated rather than duplicated.
 
     Order:
-    1. Register MCP servers (GitHub, Home Assistant, Obsidian)
+    1. Register MCP servers (GitHub, Home Assistant, Filesystem)
     2. Create shared memory blocks and archives
     3. Create worker agents (tags allow PA to discover them)
     4. Create Personal Assistant supervisor
@@ -70,20 +70,25 @@ def create_all_agents():
     print()
 
     # =========================================================================
-    # Step 1: Register MCP servers (idempotent)
+    # Step 1: Register MCP servers (GitHub, Home Assistant, Filesystem)
     # =========================================================================
     mcp_servers = setup_mcp_servers(client)
     print()
 
     # Get tool IDs and names for each agent
-    # Task Agent gets GitHub + Obsidian
-    task_mcp_tools = get_mcp_tool_ids(mcp_servers, "github", "obsidian")
-    task_mcp_tool_names = get_mcp_tool_names(mcp_servers, "github", "obsidian")
+    # Document store (filesystem) tools — shared by all worker agents
+    fs_mcp_tools = get_mcp_tool_ids(mcp_servers, "filesystem")
+    fs_mcp_tool_names = get_mcp_tool_names(mcp_servers, "filesystem")
+    fs_mcp_rules = build_mcp_tool_rules(fs_mcp_tool_names, max_count=5)
+
+    # Task Agent gets GitHub + filesystem
+    task_mcp_tools = get_mcp_tool_ids(mcp_servers, "github", "filesystem")
+    task_mcp_tool_names = get_mcp_tool_names(mcp_servers, "github", "filesystem")
     task_mcp_rules = build_mcp_tool_rules(task_mcp_tool_names, max_count=5)
 
-    # HomeAssistant Agent gets HA MCP tools
-    ha_mcp_tools = get_mcp_tool_ids(mcp_servers, "home-assistant")
-    ha_mcp_tool_names = get_mcp_tool_names(mcp_servers, "home-assistant")
+    # HomeAssistant Agent gets HA + filesystem MCP tools
+    ha_mcp_tools = get_mcp_tool_ids(mcp_servers, "home-assistant", "filesystem")
+    ha_mcp_tool_names = get_mcp_tool_names(mcp_servers, "home-assistant", "filesystem")
     ha_mcp_rules = build_mcp_tool_rules(ha_mcp_tool_names, max_count=5)
 
     # =========================================================================
@@ -97,7 +102,11 @@ def create_all_agents():
     # =========================================================================
     print("Setting up worker agents...")
 
-    research_agent, research_created = create_research_agent(client, config, shared)
+    research_agent, research_created = create_research_agent(
+        client, config, shared,
+        mcp_tool_ids=fs_mcp_tools,
+        mcp_tool_rules=fs_mcp_rules,
+    )
     print(f"  Research Agent {_status(research_created)}:      {research_agent.id}")
 
     task_agent, task_created = create_task_agent(
@@ -107,7 +116,11 @@ def create_all_agents():
     )
     print(f"  Task Agent {_status(task_created)}:          {task_agent.id}")
 
-    coding_agent, coding_created = create_coding_agent(client, config, shared)
+    coding_agent, coding_created = create_coding_agent(
+        client, config, shared,
+        mcp_tool_ids=fs_mcp_tools,
+        mcp_tool_rules=fs_mcp_rules,
+    )
     print(f"  Coding Agent {_status(coding_created)}:        {coding_agent.id}")
 
     homeassistant_agent, ha_created = create_homeassistant_agent(

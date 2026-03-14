@@ -4,7 +4,8 @@ Docker-based deployment for a Letta multi-agent system with Discord bot interfac
 - **Supervisor-worker orchestration** following Letta best practices
 - **Shared knowledge base** across all agents
 - **Sandboxed coding agent** for safe code execution
-- **MCP integrations** for GitHub, Home Assistant, and Obsidian
+- **MCP integrations** for GitHub, Home Assistant, and a shared document store
+- **Document store** (SilverBullet) with web UI for viewing agent-generated documents
 
 ## Architecture
 
@@ -23,7 +24,7 @@ Personal Assistant (supervisor)
      |
      +-- Task Agent (tags: worker, task)
      |     - To-dos, reminders, workflows
-     |     - GitHub operations, Obsidian notes
+      |     - GitHub operations, document store notes
      |     - Stores entries with [task] tag
      |
      +-- Coding Agent (tags: worker, coding)
@@ -97,6 +98,7 @@ docker compose up -d
 
 This starts:
 - `letta-server` — Letta API server (port 8283)
+- `silverbullet` — Document store web UI (port 3001)
 - `coding-sandbox` — Sandboxed coding environment
 - `discord-bot` — Discord interface (will fail until agent ID is set)
 
@@ -149,6 +151,7 @@ This is useful for:
 | Service | Port | Description |
 |---------|------|-------------|
 | `letta-server` | 8283 | Letta API server |
+| `silverbullet` | 3001 | Document store web UI (SilverBullet) |
 | `coding-sandbox` | 3002 (internal) | Coding sandbox service |
 | `discord-bot` | — | Discord bot interface |
 
@@ -157,10 +160,10 @@ This is useful for:
 | Agent | Tags | Role | Tools |
 |-------|------|------|-------|
 | **Personal Assistant** | supervisor, assistant | Orchestrator, user-facing | web_search, fetch_webpage, archival_memory_search, send_message_to_agents_matching_tags |
-| **Research Agent** | worker, research | Deep research | web_search, fetch_webpage, archival_memory_* |
-| **Task Agent** | worker, task | Task management | web_search, archival_memory_*, GitHub MCP, Obsidian MCP |
-| **Coding Agent** | worker, coding | Code execution | archival_memory_*, execute_coding_task (sandbox) |
-| **HomeAssistant Agent** | worker, smarthome | Smart home config | archival_memory_*, Home Assistant MCP (~97 tools) |
+| **Research Agent** | worker, research | Deep research | web_search, fetch_webpage, archival_memory_*, Filesystem MCP |
+| **Task Agent** | worker, task | Task management | web_search, archival_memory_*, GitHub MCP, Filesystem MCP |
+| **Coding Agent** | worker, coding | Code execution | archival_memory_*, execute_coding_task (sandbox), Filesystem MCP |
+| **HomeAssistant Agent** | worker, smarthome | Smart home config | archival_memory_*, Home Assistant MCP (~97 tools), Filesystem MCP |
 
 ## Environment Variables
 
@@ -194,7 +197,9 @@ This is useful for:
 |----------|-------------|
 | `HOMEASSISTANT_MCP_URL` | Home Assistant MCP server URL |
 | `HOMEASSISTANT_TOKEN` | Home Assistant long-lived access token |
-| `OBSIDIAN_VAULT_PATH` | Path to Obsidian vault |
+| `DOCUMENT_STORE_PATH` | Path to document store directory (default: `./documents`) |
+| `SILVERBULLET_PORT` | SilverBullet web UI port (default: `3001`) |
+| `SILVERBULLET_USER` | SilverBullet basic auth, format `user:pass` (optional) |
 
 ### Optional — Coding Sandbox
 
@@ -218,7 +223,12 @@ Talk to your Personal Assistant on Discord:
 **Smart home:**
 > "Create an automation that turns on the porch light at sunset"
 
+**Document store:**
+> "Research AI trends and write a report to the document store"
+> "Take notes on what we discussed today"
+
 The Personal Assistant delegates to the appropriate worker agent based on the task type.
+Worker agents write documents to the shared document store, which you can browse at `http://your-server:3001`.
 
 ## Development
 
