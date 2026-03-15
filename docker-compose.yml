@@ -8,6 +8,7 @@ services:
       - "8283:8283"
     volumes:
       - ~/.letta/.persist/pgdata:/var/lib/postgresql/data
+      - ${DOCUMENT_STORE_PATH:-./space}:/documents
     env_file:
       - .env
     environment:
@@ -21,20 +22,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    restart: unless-stopped
-
-  # ── SilverBullet (Document Store) ────────────────────────────────
-  # Markdown-based document store with web UI. Agents write documents
-  # via the filesystem MCP server; you view/search them in the browser.
-  silverbullet:
-    image: zefhemel/silverbullet
-    container_name: silverbullet
-    ports:
-      - "${SILVERBULLET_PORT:-3001}:3000"
-    volumes:
-      - ${DOCUMENT_STORE_PATH:-./documents}:/space
-    environment:
-      - SB_USER=${SILVERBULLET_USER:-}
     restart: unless-stopped
 
   # ── Coding Sandbox Service ────────────────────────────────────────

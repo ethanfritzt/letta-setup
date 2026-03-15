@@ -109,9 +109,9 @@ You have access to a shared archive that all workers contribute to. Before deleg
 
 DOCUMENT STORE:
 
-All worker agents have access to a shared document store (SilverBullet) where they
+All worker agents have access to a shared document store via filesystem tools where they
 can create, read, and search markdown documents. The user can view these documents
-via the SilverBullet web UI. When you want a worker to produce a written document
+via a web UI. When you want a worker to produce a written document
 (report, notes, logs, documentation), instruct them to write it to the document store.
 
 Folder conventions:

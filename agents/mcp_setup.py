@@ -201,11 +201,14 @@ def _register_filesystem_mcp(client: Letta) -> MCPServerInfo | None:
     """
     Find or register the Filesystem MCP server (stdio transport).
 
-    Provides file read/write/search/list tools for the document store
-    (SilverBullet data directory). Agents use these tools to create and
-    read markdown documents that are viewable in the SilverBullet web UI.
+    Provides file read/write/search/list tools for the document store.
+    Agents use these tools to create and read markdown documents.
 
-    Requires: DOCUMENT_STORE_PATH environment variable.
+    The DOCUMENT_STORE_PATH env var controls the host path mounted into
+    the Letta container at /documents. The MCP server always operates on
+    /documents (the container-internal path).
+
+    Requires: DOCUMENT_STORE_PATH environment variable (to enable the server).
     """
     doc_path = os.getenv("DOCUMENT_STORE_PATH")
     if not doc_path:
@@ -217,14 +220,20 @@ def _register_filesystem_mcp(client: Letta) -> MCPServerInfo | None:
         existing = _find_existing_mcp_server(client, "filesystem")
         if existing:
             tool_ids, tool_names = _get_server_tools(client, existing.id)
-            print(f"Found existing Filesystem MCP: {len(tool_ids)} tools")
-            return MCPServerInfo(
-                name="filesystem",
-                server_id=existing.id,
-                tool_ids=tool_ids,
-                tool_names=tool_names,
-                was_created=False,
-            )
+            if tool_ids:
+                print(f"Found existing Filesystem MCP: {len(tool_ids)} tools")
+                return MCPServerInfo(
+                    name="filesystem",
+                    server_id=existing.id,
+                    tool_ids=tool_ids,
+                    tool_names=tool_names,
+                    was_created=False,
+                )
+            else:
+                # Previous registration returned 0 tools (likely misconfigured path).
+                # Delete and re-register with the correct container path.
+                print("Existing Filesystem MCP has 0 tools — deleting and re-registering...")
+                client.mcp_servers.delete(existing.id)
 
         # Register new server
         # The official @modelcontextprotocol/server-filesystem MCP server
@@ -235,7 +244,7 @@ def _register_filesystem_mcp(client: Letta) -> MCPServerInfo | None:
             config={
                 "mcp_server_type": "stdio",
                 "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-filesystem", doc_path],
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/documents"],
             }
         )
 

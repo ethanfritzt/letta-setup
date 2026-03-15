@@ -5,7 +5,7 @@ Docker-based deployment for a Letta multi-agent system with Discord bot interfac
 - **Shared knowledge base** across all agents
 - **Sandboxed coding agent** for safe code execution
 - **MCP integrations** for GitHub, Home Assistant, and a shared document store
-- **Document store** (SilverBullet) with web UI for viewing agent-generated documents
+- **Document store** via Filesystem MCP for agent-generated documents (pair with SilverBullet or similar for a web UI)
 
 ## Architecture
 
@@ -98,7 +98,6 @@ docker compose up -d
 
 This starts:
 - `letta-server` — Letta API server (port 8283)
-- `silverbullet` — Document store web UI (port 3001)
 - `coding-sandbox` — Sandboxed coding environment
 - `discord-bot` — Discord interface (will fail until agent ID is set)
 
@@ -151,7 +150,6 @@ This is useful for:
 | Service | Port | Description |
 |---------|------|-------------|
 | `letta-server` | 8283 | Letta API server |
-| `silverbullet` | 3001 | Document store web UI (SilverBullet) |
 | `coding-sandbox` | 3002 (internal) | Coding sandbox service |
 | `discord-bot` | — | Discord bot interface |
 
@@ -197,9 +195,7 @@ This is useful for:
 |----------|-------------|
 | `HOMEASSISTANT_MCP_URL` | Home Assistant MCP server URL |
 | `HOMEASSISTANT_TOKEN` | Home Assistant long-lived access token |
-| `DOCUMENT_STORE_PATH` | Path to document store directory (default: `./documents`) |
-| `SILVERBULLET_PORT` | SilverBullet web UI port (default: `3001`) |
-| `SILVERBULLET_USER` | SilverBullet basic auth, format `user:pass` (optional) |
+| `DOCUMENT_STORE_PATH` | Host path to document store directory, mounted into Letta container at `/documents` (default: `./space`) |
 
 ### Optional — Coding Sandbox
 
@@ -228,7 +224,7 @@ Talk to your Personal Assistant on Discord:
 > "Take notes on what we discussed today"
 
 The Personal Assistant delegates to the appropriate worker agent based on the task type.
-Worker agents write documents to the shared document store, which you can browse at `http://your-server:3001`.
+Worker agents write documents to the shared document store. Pair with [SilverBullet](https://silverbullet.md) or a similar tool to browse them in a web UI.
 
 ## Development
 

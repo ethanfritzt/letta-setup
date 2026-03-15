@@ -287,7 +287,7 @@ GUIDELINES_DEFAULT = """Coordination Guidelines:
 
 Document Store:
 All worker agents have access to a shared document store via filesystem tools.
-Documents are markdown files viewable in the SilverBullet web UI.
+Documents are markdown files stored in the shared document store.
 
 Folder conventions (content-type based):
 - Reports/     — Research reports, summaries, analysis documents

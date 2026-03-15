@@ -28,7 +28,7 @@ Environment variables:
     GH_TOKEN                - GitHub personal access token (optional)
     HOMEASSISTANT_MCP_URL   - Home Assistant MCP server URL (optional)
     HOMEASSISTANT_TOKEN     - Home Assistant long-lived access token (optional)
-    DOCUMENT_STORE_PATH     - Path to document store / SilverBullet space (optional)
+    DOCUMENT_STORE_PATH     - Path to document store directory (optional)
 """
 
 from .config import get_config, get_client, create_shared_resources, build_mcp_tool_rules
