@@ -18,7 +18,7 @@
  */
 
 import express, { Request, Response } from "express";
-import { createSession } from "@letta-ai/letta-code-sdk";
+import { createAgent, createSession } from "@letta-ai/letta-code-sdk";
 import { execSync } from "child_process";
 import { mkdtempSync, rmSync, existsSync, cpSync, mkdirSync } from "fs";
 import path from "path";
@@ -30,8 +30,6 @@ const PORT = process.env.PORT || 3002;
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || "/workspace";
 const TASK_TIMEOUT_MS = parseInt(process.env.TASK_TIMEOUT_MS || "600000", 10);
 const LETTA_BASE_URL = process.env.LETTA_BASE_URL || "http://letta-server:8283";
-const LETTA_MODEL = process.env.LETTA_MODEL || "anthropic/claude-sonnet-4-6";
-const LETTA_EMBEDDING = process.env.LETTA_EMBEDDING || "letta/letta-free";
 const SKILLS_SOURCE = process.env.SKILLS_SOURCE || "/app/skills";
 
 // =============================================================================
@@ -103,40 +101,6 @@ async function discoverSharedBlocks(): Promise<SharedBlockIds> {
   return result;
 }
 
-/**
- * Create an agent via the Letta REST API with shared block_ids.
- *
- * This bypasses the Letta Code SDK's createAgent() which has a CLI bug
- * that rejects blockId references in memory blocks. The Letta server API
- * properly supports block_ids for attaching shared blocks.
- *
- * Returns the agent ID on success, or throws on failure.
- */
-async function createAgentViaApi(
-  memoryBlocks: Array<{ label: string; value: string }>,
-  blockIds: string[],
-  tags: string[],
-): Promise<string> {
-  const response = await lettaApi("/v1/agents/", {
-    method: "POST",
-    body: JSON.stringify({
-      memory_blocks: memoryBlocks,
-      block_ids: blockIds,
-      tags,
-      model: LETTA_MODEL,
-      embedding: LETTA_EMBEDDING,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to create agent: HTTP ${response.status} - ${text}`);
-  }
-
-  const agent = await response.json() as { id: string };
-  return agent.id;
-}
-
 // =============================================================================
 // Letta Code Worker Agent Management
 // =============================================================================
@@ -167,14 +131,12 @@ When working on coding tasks:
  * The worker is created once with shared blocks from the Letta hierarchy,
  * then reused. Each task gets a fresh conversation via createSession().
  *
- * Agent creation uses the Letta REST API directly instead of the SDK's
- * createAgent() to work around a CLI bug that rejects blockId references
- * in memory blocks (the CLI validates memory blocks in main() before
- * entering headless mode, and that validation doesn't support blockId).
- *
  * Validates the cached agent ID still exists on the Letta server before
  * returning it — handles cases where the agent was deleted (e.g., after
  * a server database reset or manual cleanup).
+ *
+ * IMPORTANT: Shared blocks are always re-discovered when creating a new
+ * agent to avoid using stale block IDs from deleted/recreated blocks.
  */
 async function getOrCreateWorker(): Promise<string> {
   if (codingWorkerId) {
@@ -191,32 +153,32 @@ async function getOrCreateWorker(): Promise<string> {
     codingWorkerId = null;
   }
 
-  // Discover shared blocks (re-discover each time we create an agent,
-  // in case blocks were deleted and recreated with new IDs)
+  // Always re-discover shared blocks when creating a new agent.
+  // This ensures we pick up new block IDs if blocks were deleted and recreated.
   sharedBlocks = await discoverSharedBlocks();
 
-  // Collect shared block IDs
-  const sharedBlockIds: string[] = [];
+  // Build memory blocks: persona + shared blocks from hierarchy
+  const memory: Array<{ label: string; value: string } | { blockId: string }> = [
+    { label: "persona", value: WORKER_PERSONA },
+    { label: "human", value: "Tasks are dispatched by the Coding Agent in the Letta hierarchy." },
+  ];
+
   if (sharedBlocks.guidelinesBlockId) {
-    sharedBlockIds.push(sharedBlocks.guidelinesBlockId);
+    memory.push({ blockId: sharedBlocks.guidelinesBlockId });
   }
   if (sharedBlocks.statusBlockId) {
-    sharedBlockIds.push(sharedBlocks.statusBlockId);
+    memory.push({ blockId: sharedBlocks.statusBlockId });
   }
 
-  console.log("Creating Letta Code worker agent via REST API...");
+  console.log("Creating Letta Code worker agent...");
   console.log(`  Shared blocks: guidelines=${sharedBlocks.guidelinesBlockId || "none"}, status=${sharedBlocks.statusBlockId || "none"}`);
 
-  // Create agent via Letta REST API with memory_blocks + shared block_ids.
-  // This avoids the SDK's createAgent() CLI bug with blockId references.
-  codingWorkerId = await createAgentViaApi(
-    [
-      { label: "persona", value: WORKER_PERSONA },
-      { label: "human", value: "Tasks are dispatched by the Coding Agent in the Letta hierarchy." },
-    ],
-    sharedBlockIds,
-    ["worker", "coding", "executor"],
-  );
+  codingWorkerId = await createAgent({
+    memory,
+    tags: ["worker", "coding", "executor"],
+    memfs: false,
+    skillSources: ["project"],
+  });
 
   console.log(`Created Letta Code worker: ${codingWorkerId}`);
   return codingWorkerId;
