@@ -18,7 +18,7 @@
  */
 
 import express, { Request, Response } from "express";
-import { createAgent, createSession } from "@letta-ai/letta-code-sdk";
+import { createSession } from "@letta-ai/letta-code-sdk";
 import { execSync } from "child_process";
 import { mkdtempSync, rmSync, existsSync, cpSync, mkdirSync } from "fs";
 import path from "path";
@@ -33,8 +33,29 @@ const LETTA_BASE_URL = process.env.LETTA_BASE_URL || "http://letta-server:8283";
 const SKILLS_SOURCE = process.env.SKILLS_SOURCE || "/app/skills";
 
 // =============================================================================
-// Shared Block Discovery
+// Letta REST API Helpers
 // =============================================================================
+
+/**
+ * Helper to make requests to the Letta API, following redirects.
+ *
+ * The Letta server may return 307 redirects (e.g., /v1/blocks → /v1/blocks/),
+ * so we always use redirect: "follow" (Node.js fetch default) and add
+ * trailing slashes to avoid unnecessary redirects.
+ */
+async function lettaApi(
+  path: string,
+  options: RequestInit = {}
+): Promise<globalThis.Response> {
+  const url = `${LETTA_BASE_URL}${path}`;
+  return fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+}
 
 interface SharedBlockIds {
   guidelinesBlockId: string | null;
@@ -56,10 +77,7 @@ async function discoverSharedBlocks(): Promise<SharedBlockIds> {
 
   for (const label of ["guidelines", "status"] as const) {
     try {
-      const response = await fetch(
-        `${LETTA_BASE_URL}/v1/blocks?label=${label}&limit=1`,
-        { headers: { "Content-Type": "application/json" } }
-      );
+      const response = await lettaApi(`/v1/blocks/?label=${label}&limit=1`);
 
       if (response.ok) {
         const data = await response.json() as { items?: Array<{ id: string }> };
@@ -81,6 +99,38 @@ async function discoverSharedBlocks(): Promise<SharedBlockIds> {
   }
 
   return result;
+}
+
+/**
+ * Create an agent via the Letta REST API with shared block_ids.
+ *
+ * This bypasses the Letta Code SDK's createAgent() which has a CLI bug
+ * that rejects blockId references in memory blocks. The Letta server API
+ * properly supports block_ids for attaching shared blocks.
+ *
+ * Returns the agent ID on success, or throws on failure.
+ */
+async function createAgentViaApi(
+  memoryBlocks: Array<{ label: string; value: string }>,
+  blockIds: string[],
+  tags: string[],
+): Promise<string> {
+  const response = await lettaApi("/v1/agents/", {
+    method: "POST",
+    body: JSON.stringify({
+      memory_blocks: memoryBlocks,
+      block_ids: blockIds,
+      tags,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to create agent: HTTP ${response.status} - ${text}`);
+  }
+
+  const agent = await response.json() as { id: string };
+  return agent.id;
 }
 
 // =============================================================================
@@ -113,6 +163,11 @@ When working on coding tasks:
  * The worker is created once with shared blocks from the Letta hierarchy,
  * then reused. Each task gets a fresh conversation via createSession().
  *
+ * Agent creation uses the Letta REST API directly instead of the SDK's
+ * createAgent() to work around a CLI bug that rejects blockId references
+ * in memory blocks (the CLI validates memory blocks in main() before
+ * entering headless mode, and that validation doesn't support blockId).
+ *
  * Validates the cached agent ID still exists on the Letta server before
  * returning it — handles cases where the agent was deleted (e.g., after
  * a server database reset or manual cleanup).
@@ -121,7 +176,7 @@ async function getOrCreateWorker(): Promise<string> {
   if (codingWorkerId) {
     // Validate the cached agent still exists on the Letta server
     try {
-      const resp = await fetch(`${LETTA_BASE_URL}/v1/agents/${codingWorkerId}`);
+      const resp = await lettaApi(`/v1/agents/${codingWorkerId}`);
       if (resp.ok) {
         return codingWorkerId;
       }
@@ -132,33 +187,32 @@ async function getOrCreateWorker(): Promise<string> {
     codingWorkerId = null;
   }
 
-  // Discover shared blocks on first call
-  if (!sharedBlocks) {
-    sharedBlocks = await discoverSharedBlocks();
-  }
+  // Discover shared blocks (re-discover each time we create an agent,
+  // in case blocks were deleted and recreated with new IDs)
+  sharedBlocks = await discoverSharedBlocks();
 
-  // Build memory blocks: persona + shared blocks from hierarchy
-  const memory: Array<{ label: string; value: string } | { blockId: string }> = [
-    { label: "persona", value: WORKER_PERSONA },
-    { label: "human", value: "Tasks are dispatched by the Coding Agent in the Letta hierarchy." },
-  ];
-
+  // Collect shared block IDs
+  const sharedBlockIds: string[] = [];
   if (sharedBlocks.guidelinesBlockId) {
-    memory.push({ blockId: sharedBlocks.guidelinesBlockId });
+    sharedBlockIds.push(sharedBlocks.guidelinesBlockId);
   }
   if (sharedBlocks.statusBlockId) {
-    memory.push({ blockId: sharedBlocks.statusBlockId });
+    sharedBlockIds.push(sharedBlocks.statusBlockId);
   }
 
-  console.log("Creating Letta Code worker agent...");
+  console.log("Creating Letta Code worker agent via REST API...");
   console.log(`  Shared blocks: guidelines=${sharedBlocks.guidelinesBlockId || "none"}, status=${sharedBlocks.statusBlockId || "none"}`);
 
-  codingWorkerId = await createAgent({
-    memory,
-    tags: ["worker", "coding", "executor"],
-    memfs: false,
-    skillSources: ["project"],
-  });
+  // Create agent via Letta REST API with memory_blocks + shared block_ids.
+  // This avoids the SDK's createAgent() CLI bug with blockId references.
+  codingWorkerId = await createAgentViaApi(
+    [
+      { label: "persona", value: WORKER_PERSONA },
+      { label: "human", value: "Tasks are dispatched by the Coding Agent in the Letta hierarchy." },
+    ],
+    sharedBlockIds,
+    ["worker", "coding", "executor"],
+  );
 
   console.log(`Created Letta Code worker: ${codingWorkerId}`);
   return codingWorkerId;
