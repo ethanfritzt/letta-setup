@@ -128,8 +128,14 @@ When working on coding tasks:
 /**
  * Get or create the persistent Letta Code worker agent.
  *
- * The worker is created once with shared blocks from the Letta hierarchy,
- * then reused. Each task gets a fresh conversation via createSession().
+ * The worker is created once via the SDK (which handles tool provisioning,
+ * system prompt, model config, etc.), then shared blocks from the Letta
+ * hierarchy are attached via the REST API.
+ *
+ * Agent creation is split into two steps to work around a CLI bug where
+ * the SDK's createAgent() rejects blockId references in memory blocks:
+ *   1. Create agent via SDK with only label/value memory blocks
+ *   2. Attach shared blocks (guidelines, status) via REST API PATCH
  *
  * Validates the cached agent ID still exists on the Letta server before
  * returning it — handles cases where the agent was deleted (e.g., after
@@ -157,30 +163,63 @@ async function getOrCreateWorker(): Promise<string> {
   // This ensures we pick up new block IDs if blocks were deleted and recreated.
   sharedBlocks = await discoverSharedBlocks();
 
-  // Build memory blocks: persona + shared blocks from hierarchy
-  const memory: Array<{ label: string; value: string } | { blockId: string }> = [
-    { label: "persona", value: WORKER_PERSONA },
-    { label: "human", value: "Tasks are dispatched by the Coding Agent in the Letta hierarchy." },
-  ];
-
+  const sharedBlockIds: string[] = [];
   if (sharedBlocks.guidelinesBlockId) {
-    memory.push({ blockId: sharedBlocks.guidelinesBlockId });
+    sharedBlockIds.push(sharedBlocks.guidelinesBlockId);
   }
   if (sharedBlocks.statusBlockId) {
-    memory.push({ blockId: sharedBlocks.statusBlockId });
+    sharedBlockIds.push(sharedBlocks.statusBlockId);
   }
 
   console.log("Creating Letta Code worker agent...");
   console.log(`  Shared blocks: guidelines=${sharedBlocks.guidelinesBlockId || "none"}, status=${sharedBlocks.statusBlockId || "none"}`);
 
+  // Step 1: Create agent via SDK with only label/value memory blocks.
+  // The SDK handles tool provisioning, system prompt, and model config.
+  // We intentionally omit blockId references here to avoid a CLI validation
+  // bug where main() rejects blockId before entering headless mode.
   codingWorkerId = await createAgent({
-    memory,
+    memory: [
+      { label: "persona", value: WORKER_PERSONA },
+      { label: "human", value: "Tasks are dispatched by the Coding Agent in the Letta hierarchy." },
+    ],
     tags: ["worker", "coding", "executor"],
     memfs: false,
     skillSources: ["project"],
   });
 
   console.log(`Created Letta Code worker: ${codingWorkerId}`);
+
+  // Step 2: Attach shared blocks via Letta REST API.
+  // This keeps the blocks truly shared (not copied) so updates propagate
+  // across all agents in the hierarchy.
+  if (sharedBlockIds.length > 0) {
+    try {
+      // Get current block IDs from the newly created agent (persona, human, etc.)
+      const agentResp = await lettaApi(`/v1/agents/${codingWorkerId}`);
+      if (agentResp.ok) {
+        const agentData = await agentResp.json() as {
+          memory?: { blocks?: Array<{ id: string }> };
+        };
+        const currentBlockIds = agentData.memory?.blocks?.map((b) => b.id) || [];
+        const mergedBlockIds = [...new Set([...currentBlockIds, ...sharedBlockIds])];
+
+        const patchResp = await lettaApi(`/v1/agents/${codingWorkerId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ block_ids: mergedBlockIds }),
+        });
+
+        if (patchResp.ok) {
+          console.log(`  Attached ${sharedBlockIds.length} shared block(s) to worker agent`);
+        } else {
+          console.warn(`  Failed to attach shared blocks: HTTP ${patchResp.status}`);
+        }
+      }
+    } catch (error) {
+      console.warn("  Could not attach shared blocks:", error);
+    }
+  }
+
   return codingWorkerId;
 }
 
