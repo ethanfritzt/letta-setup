@@ -30,6 +30,8 @@ const PORT = process.env.PORT || 3002;
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || "/workspace";
 const TASK_TIMEOUT_MS = parseInt(process.env.TASK_TIMEOUT_MS || "600000", 10);
 const LETTA_BASE_URL = process.env.LETTA_BASE_URL || "http://letta-server:8283";
+const LETTA_MODEL = process.env.LETTA_MODEL || "anthropic/claude-sonnet-4-6";
+const LETTA_EMBEDDING = process.env.LETTA_EMBEDDING || "letta/letta-free";
 const SKILLS_SOURCE = process.env.SKILLS_SOURCE || "/app/skills";
 
 // =============================================================================
@@ -121,6 +123,8 @@ async function createAgentViaApi(
       memory_blocks: memoryBlocks,
       block_ids: blockIds,
       tags,
+      model: LETTA_MODEL,
+      embedding: LETTA_EMBEDDING,
     }),
   });
 
