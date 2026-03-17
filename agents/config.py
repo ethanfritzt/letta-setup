@@ -5,6 +5,16 @@ Environment variables (with defaults):
     LETTA_BASE_URL      - Letta server URL (default: http://localhost:8283)
     LETTA_MODEL         - LLM model to use (default: anthropic/claude-sonnet-4-6)
     LETTA_EMBEDDING     - Embedding model (default: letta/letta-free)
+
+Per-agent model overrides (each falls back to LETTA_MODEL if not set):
+    LETTA_MODEL_PA            - Model for the Personal Assistant agent
+    LETTA_MODEL_RESEARCH      - Model for the Research agent
+    LETTA_MODEL_TASK          - Model for the Task agent
+    LETTA_MODEL_CODING        - Model for the Coding agent
+    LETTA_MODEL_HOMEASSISTANT - Model for the HomeAssistant agent
+
+Use get_agent_model(agent_key, config) to resolve a per-agent override with
+automatic fallback to the global LETTA_MODEL default.
 """
 
 import os
@@ -54,12 +64,43 @@ SUPERVISOR_TOOL_RULES = [
 
 
 def get_config() -> AgentConfig:
-    """Load configuration from environment variables with defaults."""
+    """
+    Load configuration from environment variables with defaults.
+
+    For per-agent model overrides, use get_agent_model(agent_key, config)
+    after calling this function.
+    """
     return AgentConfig(
         base_url=os.getenv("LETTA_BASE_URL", "http://localhost:8283"),
         model=os.getenv("LETTA_MODEL", "anthropic/claude-sonnet-4-6"),
         embedding=os.getenv("LETTA_EMBEDDING", "letta/letta-free"),
     )
+
+
+def get_agent_model(agent_key: str, config: AgentConfig) -> str:
+    """
+    Get the LLM model for a specific agent, falling back to the global default.
+
+    Reads the per-agent env var ``LETTA_MODEL_<AGENT_KEY>`` (e.g.
+    ``LETTA_MODEL_CODING`` for ``agent_key="coding"``). If the variable is not
+    set the value of ``config.model`` (i.e. the global ``LETTA_MODEL`` default)
+    is returned unchanged, so this function is fully backwards compatible.
+
+    Args:
+        agent_key: Agent identifier. One of "pa", "research", "task",
+                   "coding", "homeassistant".
+        config: AgentConfig instance returned by get_config().
+
+    Returns:
+        The model string to use for this agent.
+
+    Example::
+
+        config = get_config()
+        model = get_agent_model("coding", config)
+        # → value of LETTA_MODEL_CODING, or config.model if not set
+    """
+    return os.getenv(f"LETTA_MODEL_{agent_key.upper()}", config.model)
 
 
 def get_client(config: AgentConfig | None = None) -> Letta:
