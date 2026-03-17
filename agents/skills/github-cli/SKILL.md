@@ -1,10 +1,9 @@
 ---
 name: github-cli
 description: >
-  GitHub CLI (gh) patterns for issue management and pull request creation.
-  Use when working with GitHub issues, creating pull requests, managing
-  branches, reviewing PRs, or any git/GitHub operations. Covers authentication,
-  PR deduplication, branch conventions, and issue workflows.
+  GitHub CLI (gh) patterns for repository management. Covers pull requests,
+  issues, releases, tags, branches, CI status, code search, and general
+  repo operations. Use when working with any GitHub or git operations.
 compatibility: Requires gh CLI authenticated via GH_TOKEN environment variable
 allowed-tools: Bash(gh:*) Bash(git:*)
 ---
@@ -175,6 +174,146 @@ gh repo fork <OWNER>/<REPO> --clone
 gh repo view <OWNER>/<REPO>
 ```
 
+## Repository Information
+
+```bash
+# View repo details (description, stars, language, default branch)
+gh repo view <OWNER>/<REPO>
+
+# View as JSON for parsing
+gh repo view <OWNER>/<REPO> --json name,defaultBranchRef,description,languages,stargazerCount
+
+# List repos for an org or user
+gh repo list <OWNER> --limit 20
+gh repo list <OWNER> --language python --sort updated
+
+# Open repo in browser
+gh browse --repo <OWNER>/<REPO>
+
+# View README
+gh repo view <OWNER>/<REPO> --json readme --jq '.readme'
+```
+
+## Branch Management
+
+```bash
+# List remote branches
+git branch -r
+
+# List branches with last commit info
+git branch -r --sort=-committerdate --format='%(refname:short) %(committerdate:relative) %(subject)'
+
+# Compare branches (commits in feature not in main)
+git log main..feature-branch --oneline
+
+# Compare branches (diff summary)
+git diff main...feature-branch --stat
+
+# Delete a merged branch (remote)
+git push origin --delete <BRANCH_NAME>
+
+# Check if a branch has been merged
+git branch -r --merged main
+```
+
+## Releases & Tags
+
+```bash
+# List releases
+gh release list --repo <OWNER>/<REPO> --limit 10
+
+# View a specific release
+gh release view <TAG> --repo <OWNER>/<REPO>
+
+# Create a release from a tag
+gh release create v1.2.0 \
+  --repo <OWNER>/<REPO> \
+  --title "v1.2.0" \
+  --notes "## Changes
+- Feature A
+- Bug fix B"
+
+# Create a release with auto-generated notes (from PRs since last release)
+gh release create v1.2.0 \
+  --repo <OWNER>/<REPO> \
+  --generate-notes
+
+# Create a draft release
+gh release create v1.2.0 \
+  --repo <OWNER>/<REPO> \
+  --draft \
+  --generate-notes
+
+# Upload assets to a release
+gh release upload v1.2.0 ./dist/artifact.tar.gz --repo <OWNER>/<REPO>
+
+# Create and push a tag
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0
+
+# List tags
+git tag --sort=-creatordate | head -20
+```
+
+## Code Search
+
+```bash
+# Search code across GitHub
+gh search code "pattern" --repo <OWNER>/<REPO>
+
+# Search issues and PRs
+gh search issues "bug" --repo <OWNER>/<REPO> --state open
+gh search prs "refactor" --repo <OWNER>/<REPO> --state merged
+
+# Search repos
+gh search repos "topic" --language python --sort stars
+```
+
+## GitHub Actions / CI
+
+```bash
+# List recent workflow runs
+gh run list --repo <OWNER>/<REPO> --limit 10
+
+# View a specific run
+gh run view <RUN_ID> --repo <OWNER>/<REPO>
+
+# View run logs
+gh run view <RUN_ID> --repo <OWNER>/<REPO> --log
+
+# Watch a run in progress
+gh run watch <RUN_ID> --repo <OWNER>/<REPO>
+
+# List workflows
+gh workflow list --repo <OWNER>/<REPO>
+
+# Trigger a workflow dispatch
+gh workflow run <WORKFLOW> --repo <OWNER>/<REPO> --ref main
+
+# Re-run failed jobs
+gh run rerun <RUN_ID> --repo <OWNER>/<REPO> --failed
+```
+
+## General Workflow
+
+```bash
+# Make arbitrary GitHub API calls
+gh api repos/<OWNER>/<REPO>/contributors --jq '.[].login'
+gh api repos/<OWNER>/<REPO>/languages
+gh api repos/<OWNER>/<REPO>/stats/commit_activity
+
+# Manage labels
+gh label list --repo <OWNER>/<REPO>
+gh label create "priority: high" --color FF0000 --repo <OWNER>/<REPO>
+
+# Create and manage gists
+gh gist create file.py --desc "Description" --public
+gh gist list
+
+# View notifications
+gh api notifications --jq '.[].subject.title'
+```
+
 ## Common Patterns
 
 ```bash
@@ -189,6 +328,15 @@ gh pr list --repo <OWNER>/<REPO> --limit 10
 
 # Search issues
 gh issue list --repo <OWNER>/<REPO> --search "keyword"
+
+# Get repo default branch name
+gh repo view <OWNER>/<REPO> --json defaultBranchRef --jq '.defaultBranchRef.name'
+
+# Count open issues by label
+gh issue list --repo <OWNER>/<REPO> --label "bug" --state open --json number --jq 'length'
+
+# List contributors with commit counts
+gh api repos/<OWNER>/<REPO>/contributors --jq '.[] | "\(.login): \(.contributions) commits"'
 ```
 
 ## Error Handling
@@ -198,3 +346,5 @@ gh issue list --repo <OWNER>/<REPO> --search "keyword"
 - **PR creation failed**: Check if a PR already exists from this branch
 - **Rate limited**: Wait and retry, or report the rate limit to the user
 - **Permission denied**: Report that the token may lack required scopes (needs `repo` scope)
+- **Not found (404)**: Verify the repo name and owner are correct; check if repo is private and token has access
+- **Merge conflict**: Report the conflicting files and suggest resolution approach
