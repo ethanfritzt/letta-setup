@@ -16,6 +16,9 @@ services:
       - SANDBOX_SERVICE_URL=http://coding-sandbox:3002
       # Enable stdio MCP servers (GitHub, filesystem via npx)
       - MCP_DISABLE_STDIO=false
+      # Increase tool sandbox timeout to 10 minutes (default is 180s = 3 min)
+      # Coding tasks via execute_coding_task can take 3-5 minutes
+      - TOOL_SANDBOX_TIMEOUT=600
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8283/v1/health"]
       interval: 15s
