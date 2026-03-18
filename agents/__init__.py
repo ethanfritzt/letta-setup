@@ -25,7 +25,6 @@ from .config import (
 from .mcp_setup import setup_mcp_servers, get_mcp_tool_ids, get_mcp_tool_names, MCPServerInfo
 from .research_agent import create_research_agent
 from .task_agent import create_task_agent
-from .coding_agent import create_coding_agent
 from .homeassistant_agent import create_homeassistant_agent
 from .personal_assistant import create_personal_assistant
 
@@ -51,7 +50,6 @@ __all__ = [
     # Agent creators
     "create_research_agent",
     "create_task_agent",
-    "create_coding_agent",
     "create_homeassistant_agent",
     "create_personal_assistant",
 ]
