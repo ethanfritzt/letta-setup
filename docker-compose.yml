@@ -26,7 +26,7 @@ services:
 
   # ── Coding Sandbox Service ────────────────────────────────────────
   # Runs Letta Code SDK in an isolated environment for executing coding tasks.
-  # The CodingAgent's custom tool calls this service to run coding tasks.
+  # The Personal Assistant's execute_coding_task tool calls this service.
   coding-sandbox:
     dns:
       - 1.1.1.1
@@ -50,6 +50,9 @@ services:
       - GH_TOKEN=${GH_TOKEN:-}
       # Skills source directory inside the container
       - SKILLS_SOURCE=/app/skills
+      # Commit co-authorship (optional) — credits you alongside the bot
+      - GIT_COAUTHOR_NAME=${GIT_COAUTHOR_NAME:-}
+      - GIT_COAUTHOR_EMAIL=${GIT_COAUTHOR_EMAIL:-}
     depends_on:
       letta-server:
         condition: service_healthy

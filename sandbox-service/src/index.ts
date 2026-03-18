@@ -19,7 +19,7 @@
 
 import express, { Request, Response } from "express";
 import { createAgent, createSession } from "@letta-ai/letta-code-sdk";
-import { execSync } from "child_process";
+
 import { mkdtempSync, rmSync, existsSync, cpSync, mkdirSync } from "fs";
 import path from "path";
 
@@ -31,6 +31,8 @@ const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || "/workspace";
 const TASK_TIMEOUT_MS = parseInt(process.env.TASK_TIMEOUT_MS || "600000", 10);
 const LETTA_BASE_URL = process.env.LETTA_BASE_URL || "http://letta-server:8283";
 const SKILLS_SOURCE = process.env.SKILLS_SOURCE || "/app/skills";
+const GIT_COAUTHOR_NAME = process.env.GIT_COAUTHOR_NAME || "";
+const GIT_COAUTHOR_EMAIL = process.env.GIT_COAUTHOR_EMAIL || "";
 
 // =============================================================================
 // Letta REST API Helpers
@@ -279,9 +281,7 @@ function copySkillsToWorkspace(workdir: string): void {
 // =============================================================================
 
 interface CodeRequest {
-  repoUrl?: string;
   task: string;
-  branch?: string;
 }
 
 interface CodeResponse {
@@ -289,49 +289,6 @@ interface CodeResponse {
   result?: string;
   error?: string;
   duration_ms?: number;
-}
-
-/**
- * Clone a git repository into the specified directory.
- *
- * Uses `gh repo clone` instead of `git clone` so that the GH_TOKEN
- * environment variable is used automatically for authentication.
- * This is required for private repositories and avoids interactive
- * credential prompts that fail in non-interactive sandbox environments.
- *
- * Falls back to `git clone` for non-GitHub URLs.
- */
-function cloneRepo(repoUrl: string, targetDir: string, branch?: string): void {
-  console.log(`Cloning ${repoUrl}${branch ? ` (branch: ${branch})` : ""} into ${targetDir}`);
-
-  // Extract owner/repo from GitHub URLs (HTTPS or SSH)
-  const match = repoUrl.match(/github\.com[/:]([^/]+\/[^/.]+?)(?:\.git)?$/);
-
-  if (match) {
-    // Use gh repo clone for GitHub repos (handles auth via GH_TOKEN)
-    const ownerRepo = match[1];
-    const gitFlags = ["--depth", "1"];
-    if (branch) {
-      gitFlags.push("-b", branch);
-    }
-
-    execSync(`gh repo clone ${ownerRepo} ${targetDir} -- ${gitFlags.join(" ")}`, {
-      timeout: 120000,
-      stdio: "pipe",
-    });
-  } else {
-    // Fallback to git clone for non-GitHub URLs
-    const args = ["clone", "--depth", "1"];
-    if (branch) {
-      args.push("-b", branch);
-    }
-    args.push(repoUrl, targetDir);
-
-    execSync(`git ${args.join(" ")}`, {
-      timeout: 120000,
-      stdio: "pipe",
-    });
-  }
 }
 
 /**
@@ -387,8 +344,8 @@ async function executeCodingTask(
  *
  * Body:
  *   - repoUrl (optional): Git URL to clone
- *   - task (required): Description of the coding task
- *   - branch (optional): Branch to checkout (default: default branch)
+ *   - task (required): Natural language description of the coding task.
+ *                      Include repo URLs, branch names, etc. in the task itself.
  *
  * Returns:
  *   - success: boolean
@@ -398,13 +355,19 @@ async function executeCodingTask(
  */
 app.post("/code", async (req: Request, res: Response<CodeResponse>) => {
   const startTime = Date.now();
-  const { repoUrl, task, branch } = req.body as CodeRequest;
+  const { task } = req.body as CodeRequest;
 
   if (!task) {
     return res.status(400).json({
       success: false,
       error: "Missing required field: task",
     });
+  }
+
+  // Append co-author instruction if configured
+  let taskWithContext = task;
+  if (GIT_COAUTHOR_NAME && GIT_COAUTHOR_EMAIL) {
+    taskWithContext = `${task}\n\nIMPORTANT: When making git commits, include a Co-authored-by trailer: "Co-authored-by: ${GIT_COAUTHOR_NAME} <${GIT_COAUTHOR_EMAIL}>"`;
   }
 
   // Create ephemeral workspace
@@ -419,17 +382,10 @@ app.post("/code", async (req: Request, res: Response<CodeResponse>) => {
     workdir = mkdtempSync(path.join(WORKSPACE_ROOT, "session-"));
     console.log(`Created workspace: ${workdir}`);
 
-    // Clone repo if URL provided
-    let taskWorkdir = workdir;
-    if (repoUrl) {
-      const repoDir = path.join(workdir, "repo");
-      cloneRepo(repoUrl, repoDir, branch);
-      taskWorkdir = repoDir;
-    }
-
     // Execute the coding task with timeout
+    // The worker handles repo cloning via gh/git commands as needed
     const result = await Promise.race([
-      executeCodingTask(task, taskWorkdir),
+      executeCodingTask(taskWithContext, workdir),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error("Task timeout exceeded")), TASK_TIMEOUT_MS)
       ),

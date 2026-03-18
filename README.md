@@ -3,7 +3,7 @@
 Docker-based deployment for a Letta multi-agent system with Discord bot interface, featuring:
 - **Supervisor-worker orchestration** following Letta best practices
 - **Shared knowledge base** across all agents
-- **Sandboxed coding agent** for safe code execution
+- **Sandboxed coding execution** via Letta Code SDK
 - **MCP integrations** for GitHub, Home Assistant, and a shared document store
 - **Document store** via Filesystem MCP for agent-generated documents (pair with SilverBullet or similar for a web UI)
 
@@ -15,8 +15,8 @@ User (Discord)
      v
 Personal Assistant (supervisor)
   - Handles simple queries directly
-  - Delegates complex tasks via tag-based routing
-  - Searches shared knowledge before delegating
+  - Delegates to workers via tag-based routing
+  - Executes coding tasks directly via sandbox
      |
      +-- Research Agent (tags: worker, research)
      |     - Deep research, web search, fact-finding
@@ -24,24 +24,24 @@ Personal Assistant (supervisor)
      |
      +-- Task Agent (tags: worker, task)
      |     - To-dos, reminders, workflows
-      |     - GitHub operations, document store notes
+     |     - GitHub operations, document store notes
      |     - Stores entries with [task] tag
      |
-     +-- Coding Agent (tags: worker, coding)
-     |     - Sandboxed code execution
-     |     - Clone repos, fix bugs, run tests
-     |     - Stores decisions with [coding] tag
-     |           |
-     |           v
-     |     Coding Sandbox Service (Docker)
-     |           |
-     |           v
-     |     Letta Code SDK (isolated container)
-     |
      +-- HomeAssistant Agent (tags: worker, smarthome)
-           - Smart home configuration
-           - Dashboards, automations, devices
-           - Stores changes with [smarthome] tag
+     |     - Smart home configuration
+     |     - Dashboards, automations, devices
+     |     - Stores changes with [smarthome] tag
+     |
+     +-- [Coding Sandbox - direct tool call]
+           - Sandboxed code execution via Letta Code SDK
+           - Full CLI: git, gh, python, node, npm
+           - Guided by SKILL.md files for CLI patterns
+                 |
+                 v
+           Coding Sandbox Service (Docker)
+                 |
+                 v
+           Letta Code SDK Worker (ephemeral)
 
 Shared Resources:
   - Guidelines block: Coordination rules (all agents)
@@ -157,11 +157,12 @@ This is useful for:
 
 | Agent | Tags | Role | Tools |
 |-------|------|------|-------|
-| **Personal Assistant** | supervisor, assistant | Orchestrator, user-facing | web_search, fetch_webpage, archival_memory_search, send_message_to_agents_matching_tags |
+| **Personal Assistant** | supervisor, assistant | Orchestrator, user-facing | web_search, fetch_webpage, archival_memory_search, send_message_to_agents_matching_tags, execute_coding_task |
 | **Research Agent** | worker, research | Deep research | web_search, fetch_webpage, archival_memory_*, Filesystem MCP |
 | **Task Agent** | worker, task | Task management | web_search, archival_memory_*, GitHub MCP, Filesystem MCP |
-| **Coding Agent** | worker, coding | Code execution | archival_memory_*, execute_coding_task (sandbox), Filesystem MCP |
 | **HomeAssistant Agent** | worker, smarthome | Smart home config | archival_memory_*, Home Assistant MCP (~97 tools), Filesystem MCP |
+
+The Personal Assistant handles coding tasks directly via `execute_coding_task`, which runs tasks in an isolated sandbox with the Letta Code SDK.
 
 ## Environment Variables
 
@@ -187,7 +188,7 @@ This is useful for:
 
 | Variable | Description |
 |----------|-------------|
-| `GH_TOKEN` | GitHub personal access token. Enables private repo access for the Coding Agent (via `gh` CLI) and GitHub MCP tools for the Task Agent. Create at https://github.com/settings/tokens with `repo` scope. |
+| `GH_TOKEN` | GitHub personal access token. Enables private repo access for the coding sandbox (via `gh` CLI) and GitHub MCP tools for the Task Agent. Create at https://github.com/settings/tokens with `repo` scope. |
 
 ### Optional — MCP Servers
 
@@ -202,6 +203,10 @@ This is useful for:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TASK_TIMEOUT_MS` | `600000` | Coding task timeout (10 min) |
+| `GIT_COAUTHOR_NAME` | (none) | Your name for commit co-authorship |
+| `GIT_COAUTHOR_EMAIL` | (none) | Your email (must match GitHub account for attribution) |
+
+**Commit co-authorship:** When `GIT_COAUTHOR_NAME` and `GIT_COAUTHOR_EMAIL` are set, the sandbox includes a `Co-authored-by` trailer in all git commits. This credits both the bot (primary author) and you (co-author), so commits appear on your GitHub contribution graph.
 
 ## Usage Examples
 
@@ -223,7 +228,8 @@ Talk to your Personal Assistant on Discord:
 > "Research AI trends and write a report to the document store"
 > "Take notes on what we discussed today"
 
-The Personal Assistant delegates to the appropriate worker agent based on the task type.
+The Personal Assistant delegates to worker agents for research, task management, and smart home tasks. For coding tasks, it calls the sandbox directly via `execute_coding_task`.
+
 Worker agents write documents to the shared document store. Pair with [SilverBullet](https://silverbullet.md) or a similar tool to browse them in a web UI.
 
 ## Development
