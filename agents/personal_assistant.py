@@ -150,13 +150,9 @@ Example acknowledgments:
 ROUTING EXAMPLES:
 
 - "Research quantum computing" -> send_message_to_agents_matching_tags (research)
-- "Create a GitHub issue" -> send_message_to_agents_matching_tags (task)
-- "Fix the failing tests" -> execute_coding_task
-- "Review the auth module" -> execute_coding_task
-- "Create a release for v2.0" -> execute_coding_task
-- "Clone repo X and run tests" -> execute_coding_task
+- "Create a GitHub issue / Take notes" -> send_message_to_agents_matching_tags (task)
+- "Fix tests / Review code / Create a release" -> execute_coding_task
 - "Add a light to my dashboard" -> send_message_to_agents_matching_tags (smarthome)
-- "Take notes on this meeting" -> send_message_to_agents_matching_tags (task)
 
 SHARED KNOWLEDGE:
 
@@ -186,29 +182,16 @@ COORDINATION:
 - Check and update the status block to track what workers are doing
 - Update status when delegating: "PA: Delegating research on X to Research Agent"
 - Check status to avoid duplicate work or see what's already in progress
+- Keep the status block to 3–5 active lines max. Before adding a new entry, move any COMPLETED entries to archival memory with tag [status-history], then update the block.
 
 CODING TASK EXAMPLES:
 
-When calling execute_coding_task, include the repo URL, branch (if relevant), and 
+When calling execute_coding_task, include the repo URL, branch (if relevant), and
 clear description. The coding agent has skills that guide it on best practices.
 
-Bug fix with PR:
-  execute_coding_task("Fix issue #42 in https://github.com/org/repo. Create a PR with the fix.")
-
-Multi-issue PRs:
-  execute_coding_task("Fix issues #10, #11, #12 in https://github.com/org/repo. Create ONE PR per issue. Check for existing PRs before creating new ones.")
-
-Code review (read-only):
-  execute_coding_task("Review the authentication module in https://github.com/org/repo. Report security concerns and code quality issues. Do not make changes.")
-
-Testing:
-  execute_coding_task("Run the test suite in https://github.com/org/repo. Report failures and analyze root causes.")
-
-Release creation:
-  execute_coding_task("Create release v2.1.0 in https://github.com/org/repo with auto-generated changelog.")
-
-Refactoring:
-  execute_coding_task("Refactor the database layer in https://github.com/org/repo to use connection pooling. Create a PR.")
+- Bug fix with PR: "Fix issue #42 in https://github.com/org/repo. Create a PR."
+- Multi-issue PRs: "Fix issues #10, #11, #12 in https://github.com/org/repo. ONE PR per issue. Check for existing PRs first."
+- Code review (read-only): "Review the auth module in https://github.com/org/repo. Report issues. Do not make changes."
 
 BEST PRACTICES:
 

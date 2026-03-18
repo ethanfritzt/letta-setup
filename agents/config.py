@@ -348,7 +348,8 @@ User Preferences:
 - (Updated by Personal Assistant as user preferences are learned)
 """.strip()
 
-STATUS_DEFAULT = """Task Status:
+STATUS_DEFAULT = """# Keep this block to 3–5 active lines. Archive completed entries to archival memory (tag: status-history) before adding new ones.
+Task Status:
 - (Agents update this block when starting/completing tasks)
 
 Recent Activity:
