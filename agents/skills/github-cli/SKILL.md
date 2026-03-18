@@ -82,6 +82,30 @@ git commit -m "feat: add dark mode toggle (fixes #15)"
 
 Types: `fix`, `feat`, `docs`, `refactor`, `test`, `chore`
 
+### Commit Co-Authorship
+
+When the `GIT_COAUTHOR_NAME` and `GIT_COAUTHOR_EMAIL` environment variables are set,
+include a `Co-authored-by` trailer in all commit messages. This credits both the bot
+(as primary author) and the user who requested the change.
+
+```bash
+# Check if co-author is configured
+if [ -n "$GIT_COAUTHOR_NAME" ] && [ -n "$GIT_COAUTHOR_EMAIL" ]; then
+  echo "Co-author configured: $GIT_COAUTHOR_NAME <$GIT_COAUTHOR_EMAIL>"
+fi
+
+# Commit with co-author trailer (note the blank line before Co-authored-by)
+git commit -m "fix: handle null pointer in auth module (fixes #42)
+
+Co-authored-by: $GIT_COAUTHOR_NAME <$GIT_COAUTHOR_EMAIL>"
+```
+
+The blank line before `Co-authored-by:` is required — it separates the commit
+description from the trailer. GitHub parses this trailer and attributes the
+commit to both authors.
+
+If the environment variables are not set, commit without a co-author trailer.
+
 ### Creating the PR
 
 ```bash

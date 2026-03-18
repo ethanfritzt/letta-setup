@@ -5,8 +5,8 @@ Letta Agent Setup Script
 Sets up all agents and shared resources in the correct order:
   1. Register MCP servers (GitHub, Home Assistant, Filesystem)
   2. Create shared memory blocks and archives
-  3. Create worker agents (Research, Task, Coding, HomeAssistant)
-  4. Create Personal Assistant (supervisor with tag-based routing)
+  3. Create worker agents (Research, Task, HomeAssistant)
+  4. Create Personal Assistant (supervisor with tag-based routing + coding sandbox)
 
 This script is IDEMPOTENT — it can be run multiple times safely:
   - Existing agents are updated (config changes applied, history preserved)
@@ -14,7 +14,8 @@ This script is IDEMPOTENT — it can be run multiple times safely:
   - New resources are created only if they don't exist
 
 The Personal Assistant uses tag-based routing instead of hardcoded agent IDs,
-making the system resilient to agent recreation.
+making the system resilient to agent recreation. For coding tasks, the PA
+calls the coding sandbox directly via execute_coding_task.
 
 Usage:
     python -m agents.create_all
@@ -35,7 +36,6 @@ from .config import get_config, get_client, create_shared_resources, build_mcp_t
 from .mcp_setup import setup_mcp_servers, get_mcp_tool_ids, get_mcp_tool_names
 from .research_agent import create_research_agent
 from .task_agent import create_task_agent
-from .coding_agent import create_coding_agent
 from .homeassistant_agent import create_homeassistant_agent
 from .personal_assistant import create_personal_assistant
 
@@ -76,10 +76,10 @@ def create_all_agents():
     print()
 
     # Get tool IDs and names for each agent
-    # Document store (filesystem) tools — shared by all worker agents
-    fs_mcp_tools = get_mcp_tool_ids(mcp_servers, "filesystem")
-    fs_mcp_tool_names = get_mcp_tool_names(mcp_servers, "filesystem")
-    fs_mcp_rules = build_mcp_tool_rules(fs_mcp_tool_names, max_count=5)
+    # Research Agent gets filesystem tools for document store
+    research_mcp_tools = get_mcp_tool_ids(mcp_servers, "filesystem")
+    research_mcp_tool_names = get_mcp_tool_names(mcp_servers, "filesystem")
+    research_mcp_rules = build_mcp_tool_rules(research_mcp_tool_names, max_count=5)
 
     # Task Agent gets GitHub + filesystem
     task_mcp_tools = get_mcp_tool_ids(mcp_servers, "github", "filesystem")
@@ -104,8 +104,8 @@ def create_all_agents():
 
     research_agent, research_created = create_research_agent(
         client, config, shared,
-        mcp_tool_ids=fs_mcp_tools,
-        mcp_tool_rules=fs_mcp_rules,
+        mcp_tool_ids=research_mcp_tools,
+        mcp_tool_rules=research_mcp_rules,
     )
     print(f"  Research Agent {_status(research_created)}:      {research_agent.id}")
 
@@ -115,13 +115,6 @@ def create_all_agents():
         mcp_tool_rules=task_mcp_rules,
     )
     print(f"  Task Agent {_status(task_created)}:          {task_agent.id}")
-
-    coding_agent, coding_created = create_coding_agent(
-        client, config, shared,
-        mcp_tool_ids=fs_mcp_tools,
-        mcp_tool_rules=fs_mcp_rules,
-    )
-    print(f"  Coding Agent {_status(coding_created)}:        {coding_agent.id}")
 
     homeassistant_agent, ha_created = create_homeassistant_agent(
         client, config, shared,
@@ -153,8 +146,10 @@ def create_all_agents():
     print(f"  Personal Assistant:  {personal_assistant.id}")
     print(f"  Research Agent:      {research_agent.id}")
     print(f"  Task Agent:          {task_agent.id}")
-    print(f"  Coding Agent:        {coding_agent.id}")
     print(f"  HomeAssistant Agent: {homeassistant_agent.id}")
+    print()
+    print("Coding tasks are handled directly by the Personal Assistant via")
+    print("the execute_coding_task tool, which calls the coding sandbox service.")
     print()
     print("MCP Servers:")
     if mcp_servers:
@@ -175,7 +170,6 @@ def create_all_agents():
         "personal_assistant": personal_assistant.id,
         "research_agent": research_agent.id,
         "task_agent": task_agent.id,
-        "coding_agent": coding_agent.id,
         "homeassistant_agent": homeassistant_agent.id,
     }
 

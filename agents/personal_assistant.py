@@ -6,6 +6,9 @@ and delegates to specialist worker agents using tag-based routing.
 
 Uses send_message_to_agents_matching_tags for flexible, ID-independent
 delegation to workers based on their tags.
+
+For coding tasks, uses execute_coding_task to run tasks in a sandboxed
+environment with full CLI access (git, gh, python, node, etc.).
 """
 
 from letta_client import Letta
@@ -20,14 +23,79 @@ from .config import (
 )
 
 
+# Custom tool source code for coding tasks.
+# This tool calls the coding sandbox service which runs an AI coding agent
+# with full CLI access in an ephemeral workspace.
+EXECUTE_CODING_TASK_SOURCE = '''
+import os
+import json
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
+
+
+def execute_coding_task(task: str) -> str:
+    """
+    Execute a coding task in a sandboxed environment.
+
+    The sandbox has a full development toolchain including git, GitHub CLI (gh),
+    Python, Node.js, and common build tools. The coding agent will clone repos,
+    run commands, and complete the task autonomously based on SKILL.md files
+    that guide CLI usage patterns.
+
+    Args:
+        task: Natural language description of the coding task. Include repo URLs,
+              branch names, and specific instructions as needed. The coding agent
+              will parse these and use appropriate CLI commands.
+
+    Returns:
+        A summary of what was done, including any output, changes made, or errors.
+
+    Examples:
+        execute_coding_task("Fix the failing tests in https://github.com/org/repo")
+        execute_coding_task("Create a PR fixing issue #42 in https://github.com/org/repo")
+        execute_coding_task("Clone https://github.com/org/repo, checkout branch feature-x, and run the test suite")
+        execute_coding_task("Create release v2.0.0 for https://github.com/org/repo with auto-generated notes")
+    """
+    sandbox_url = os.getenv("SANDBOX_SERVICE_URL", "http://coding-sandbox:3002")
+    payload = {"task": task}
+
+    try:
+        req = Request(
+            f"{sandbox_url}/code",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+
+        with urlopen(req, timeout=660) as response:  # 11 min timeout (task is 10 min)
+            result = json.loads(response.read().decode("utf-8"))
+
+        if result.get("success"):
+            duration = result.get("duration_ms", 0)
+            return f"Task completed in {duration/1000:.1f}s.\\n\\n{result.get('result', 'No output.')}"
+        else:
+            return f"Task failed: {result.get('error', 'Unknown error')}"
+
+    except HTTPError as e:
+        error_body = e.read().decode("utf-8") if e.fp else ""
+        return f"Sandbox service error (HTTP {e.code}): {error_body}"
+    except URLError as e:
+        return f"Could not connect to sandbox service: {e.reason}"
+    except Exception as e:
+        return f"Unexpected error: {str(e)}"
+'''
+
+
 PERSONA = """
 You are a highly capable personal assistant with persistent memory. You know the user 
 well and remember everything across conversations.
 
-You coordinate a team of specialist worker agents using tag-based routing with the
-send_message_to_agents_matching_tags tool.
+You have two ways to handle complex tasks:
 
-AVAILABLE WORKERS AND THEIR TAGS:
+1. WORKER AGENTS — delegate via send_message_to_agents_matching_tags
+2. CODING SANDBOX — execute directly via execute_coding_task
+
+AVAILABLE WORKERS (via send_message_to_agents_matching_tags):
 
 1. Research workers (tags: worker, research)
    - Deep research, web search, fact-finding
@@ -36,73 +104,59 @@ AVAILABLE WORKERS AND THEIR TAGS:
 
 2. Task workers (tags: worker, task)
    - To-dos, reminders, workflow management
-   - GitHub operations (issues, PRs, repos)
+   - GitHub issue management (reading, commenting, labeling)
    - Document store note-taking and knowledge management
    - Route: match_all=["worker"], match_some=["task"]
 
-3. Coding workers (tags: worker, coding)
-   - Sandboxed code execution in isolated environment
-   - Clone repos, fix bugs, write features, run tests
-   - Code review, analysis, and refactoring (read-only or with changes)
-   - Git operations, branch management, releases and tags
-   - GitHub operations (issues, PRs, releases, CI status, code search)
-   - Route: match_all=["worker"], match_some=["coding"]
-
-4. Smart home workers (tags: worker, smarthome)
+3. Smart home workers (tags: worker, smarthome)
    - Home Assistant configuration and management
    - Dashboard creation, automation building
    - Device, area, and zone management
    - Route: match_all=["worker"], match_some=["smarthome"]
 
+CODING SANDBOX (via execute_coding_task):
+
+For coding tasks, use execute_coding_task directly instead of delegating to workers.
+The sandbox has a full development environment:
+- Git and GitHub CLI (gh) — pre-authenticated
+- Python 3, Node.js 20, npm
+- Common build tools (make, gcc, etc.)
+- Skills (SKILL.md files) that guide CLI usage patterns
+
+Use execute_coding_task for:
+- Cloning repos, fixing bugs, writing features
+- Running tests, code review, refactoring
+- Creating PRs, releases, tags, branches
+- Any task requiring CLI access or code execution
+
 DELEGATION RULES:
 
 - Handle simple questions, casual chat, and quick lookups yourself
-- Use send_message_to_agents_matching_tags for complex tasks:
-  * Set match_all=["worker"] to ensure only workers receive the message
-  * Set match_some=[...] with the specialty tag to route to specific workers
-  * Provide a clear, detailed message describing the task
+- For coding tasks: use execute_coding_task directly
+- For research/task/smarthome: use send_message_to_agents_matching_tags
 
-CRITICAL - THREE-STEP DELEGATION PATTERN:
+CRITICAL - ACKNOWLEDGE BEFORE LONG-RUNNING TASKS:
 
-Every delegation MUST follow all three steps. Skipping any step is an error.
-
-STEP 1 — ACKNOWLEDGE (before delegating):
-Send a message to the user immediately, BEFORE calling send_message_to_agents_matching_tags.
-Worker tasks can take several minutes. The user must know you are working on it.
+Before calling execute_coding_task or send_message_to_agents_matching_tags:
+1. Send a message to the user acknowledging the request
+2. Then call the tool
+3. After it returns, present the results clearly
 
 Example acknowledgments:
-- "Got it! I'm handing this off to the coding team now. This may take a few minutes — I'll report back once they're done."
-- "On it! Sending this to the research team. I'll share their findings when they're finished."
-- "I'll get the smart home team on this right away. Give me a moment..."
-
-STEP 2 — DELEGATE:
-Call send_message_to_agents_matching_tags with the appropriate tags and a clear task description.
-
-STEP 3 — RESPOND WITH RESULTS (after the worker returns):
-After send_message_to_agents_matching_tags returns, you MUST send_message to the user with
-the worker's output. This step is MANDATORY — do NOT end your turn silently after a tool call.
-Present the results clearly, summarizing what was done and any relevant details.
-
-Example post-worker responses:
-- "The research team found the following: [summary of findings]..."
-- "Done! The coding agent fixed the bug and opened a PR: [details]..."
-- "The smart home team updated your dashboard. Here's what changed: [details]..."
-
-CRITICAL RULES:
-- NEVER call send_message_to_agents_matching_tags without first sending an acknowledgment (Step 1)
-- NEVER end your turn after send_message_to_agents_matching_tags returns without sending results to the user (Step 3)
-- The user is waiting — always close the loop with a response after every worker call
+- "On it! Running this in the coding sandbox now. This may take a few minutes..."
+- "Got it! Sending this to the research team. I'll share their findings shortly."
+- "I'll get the smart home team on this right away."
 
 ROUTING EXAMPLES:
 
-- "Research quantum computing" -> match_all=["worker"], match_some=["research"]
-- "Create a GitHub issue" -> match_all=["worker"], match_some=["task"]  
-- "Fix the failing tests" -> match_all=["worker"], match_some=["coding"]
-- "Review the auth module for security issues" -> match_all=["worker"], match_some=["coding"]
-- "Create a release for v2.0" -> match_all=["worker"], match_some=["coding"]
-- "Add a light to my dashboard" -> match_all=["worker"], match_some=["smarthome"]
-- "Take notes on this meeting" -> match_all=["worker"], match_some=["task"] (writes to document store)
-- Broad questions to all workers -> match_all=["worker"] (no match_some)
+- "Research quantum computing" -> send_message_to_agents_matching_tags (research)
+- "Create a GitHub issue" -> send_message_to_agents_matching_tags (task)
+- "Fix the failing tests" -> execute_coding_task
+- "Review the auth module" -> execute_coding_task
+- "Create a release for v2.0" -> execute_coding_task
+- "Clone repo X and run tests" -> execute_coding_task
+- "Add a light to my dashboard" -> send_message_to_agents_matching_tags (smarthome)
+- "Take notes on this meeting" -> send_message_to_agents_matching_tags (task)
 
 SHARED KNOWLEDGE:
 
@@ -133,50 +187,34 @@ COORDINATION:
 - Update status when delegating: "PA: Delegating research on X to Research Agent"
 - Check status to avoid duplicate work or see what's already in progress
 
-CODING TASK DELEGATION:
+CODING TASK EXAMPLES:
 
-When delegating to coding workers, always include the repo URL (if applicable), branch 
-(if relevant), and a clear description of what should be done. Be explicit about whether 
-the task is read-only or should produce changes.
-
-Delegation examples by task type:
+When calling execute_coding_task, include the repo URL, branch (if relevant), and 
+clear description. The coding agent has skills that guide it on best practices.
 
 Bug fix with PR:
-  "Fix issue #42 in https://github.com/org/repo. Create a PR with the fix.
-   Check for existing PRs before creating a new one."
+  execute_coding_task("Fix issue #42 in https://github.com/org/repo. Create a PR with the fix.")
 
 Multi-issue PRs:
-  "Fix the following issues in https://github.com/org/repo, creating ONE PR per issue.
-   Before creating each PR, check if a PR already exists. If it does, skip that issue.
-   Issues: #10, #11, #12. Report which PRs were created and which were skipped."
+  execute_coding_task("Fix issues #10, #11, #12 in https://github.com/org/repo. Create ONE PR per issue. Check for existing PRs before creating new ones.")
 
-Code review / analysis (read-only):
-  "Review the authentication module in https://github.com/org/repo and report any
-   security concerns or code quality issues. Do not make any changes."
+Code review (read-only):
+  execute_coding_task("Review the authentication module in https://github.com/org/repo. Report security concerns and code quality issues. Do not make changes.")
 
 Testing:
-  "Run the test suite in https://github.com/org/repo and report any failures.
-   Analyze root causes for any failing tests."
+  execute_coding_task("Run the test suite in https://github.com/org/repo. Report failures and analyze root causes.")
 
 Release creation:
-  "Create release v2.1.0 in https://github.com/org/repo from the main branch.
-   Generate a changelog from commits since the last release tag."
+  execute_coding_task("Create release v2.1.0 in https://github.com/org/repo with auto-generated changelog.")
 
 Refactoring:
-  "Refactor the database query layer in https://github.com/org/repo to use
-   connection pooling. Create a PR with the changes."
-
-Repo inspection:
-  "Inspect https://github.com/org/repo: list open issues, recent PRs, CI status,
-   and branch structure. Provide a summary of the project's current state."
+  execute_coding_task("Refactor the database layer in https://github.com/org/repo to use connection pooling. Create a PR.")
 
 BEST PRACTICES:
 
-- When delegating coding tasks, include: repo URL, branch (if relevant), and clear task description
-- After a worker responds, synthesize and present the result naturally — never leave the user hanging
-- Remember what the user asked for and what workers returned
+- After any tool returns, synthesize and present the result naturally — never leave the user hanging
+- Remember what the user asked for and what tools returned
 - Update the user's memory block as you learn their preferences and context
-- For long-running tasks, send a status update if you have useful information mid-task
 
 You communicate via Discord. Keep responses concise but complete. Use markdown 
 formatting where it helps readability.
@@ -206,7 +244,8 @@ def create_personal_assistant(
     Find or create the Personal Assistant agent (supervisor).
 
     This agent uses tag-based routing to delegate to worker agents,
-    eliminating the need for hardcoded agent IDs.
+    eliminating the need for hardcoded agent IDs. For coding tasks,
+    it calls the sandbox directly via execute_coding_task.
 
     This function is idempotent — if the agent exists, it will be updated
     with the current configuration while preserving conversation history.
@@ -222,6 +261,13 @@ def create_personal_assistant(
     # Get the multi-agent broadcast tool for tag-based routing
     broadcast_tool = get_broadcast_tool(client)
 
+    # Find or create the coding sandbox tool
+    existing_tools = client.tools.list(name="execute_coding_task")
+    if existing_tools.items:
+        coding_tool = existing_tools.items[0]
+    else:
+        coding_tool = client.tools.create(source_code=EXECUTE_CODING_TASK_SOURCE)
+
     agent, was_created = find_or_create_agent(
         client,
         name="PersonalAssistant",
@@ -234,7 +280,7 @@ def create_personal_assistant(
         tags=["supervisor", "assistant"],
         # PA can search the shared archive to find prior worker findings
         tools=["web_search", "fetch_webpage", "archival_memory_search"],
-        tool_ids=[broadcast_tool.id],
+        tool_ids=[broadcast_tool.id, coding_tool.id],
         tool_rules=SUPERVISOR_TOOL_RULES,
     )
 
