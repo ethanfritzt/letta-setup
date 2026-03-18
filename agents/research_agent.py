@@ -96,7 +96,7 @@ def create_research_agent(
             {"label": "persona", "value": PERSONA},
             {"label": "human", "value": HUMAN},
         ],
-        block_ids=[shared.guidelines_block_id, shared.status_block_id],
+        block_ids=[],
         tags=["worker", "research"],
         tools=["web_search", "fetch_webpage", "archival_memory_insert", "archival_memory_search"],
         tool_ids=mcp_tool_ids,
