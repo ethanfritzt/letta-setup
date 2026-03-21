@@ -4,7 +4,7 @@ Shared configuration for Letta agents.
 Environment variables (with defaults):
     LETTA_BASE_URL      - Letta server URL (default: http://localhost:8283)
     LETTA_MODEL         - LLM model to use (default: anthropic/claude-sonnet-4-6)
-    LETTA_EMBEDDING     - Embedding model (default: ollama/mxbai-embed-large)
+    LETTA_EMBEDDING     - Embedding model (default: ollama/mxbai-embed-large:latest)
 
 Per-agent model overrides (each falls back to LETTA_MODEL if not set):
     LETTA_MODEL_PA            - Model for the Personal Assistant agent
@@ -75,7 +75,7 @@ def get_config() -> AgentConfig:
     return AgentConfig(
         base_url=os.getenv("LETTA_BASE_URL", "http://localhost:8283"),
         model=os.getenv("LETTA_MODEL", "anthropic/claude-sonnet-4-6"),
-        embedding=os.getenv("LETTA_EMBEDDING", "ollama/mxbai-embed-large"),
+        embedding=os.getenv("LETTA_EMBEDDING", "ollama/mxbai-embed-large:latest"),
     )
 
 

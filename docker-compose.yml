@@ -23,7 +23,10 @@ services:
       # Coding tasks via execute_coding_task can take 3-5 minutes
       - TOOL_SANDBOX_TIMEOUT=600
       # Ollama for local embeddings (archival memory)
-      - OLLAMA_BASE_URL=http://ollama:11434
+      # Must include /v1 — Letta uses the OpenAI client for embeddings,
+      # which appends /embeddings to this base URL. Without /v1, requests
+      # hit /embeddings (404) instead of /v1/embeddings.
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/v1/health"]
       interval: 15s
