@@ -102,9 +102,10 @@ def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str 
 
             # Check for duplicate task name
             try:
-                existing = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory/search",
-                                          query={"query": task_name, "tags": ["monitoring-task", task_name], "tag_match_mode": "all"})
-                if existing and len(existing) > 0:
+                resp = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory/search",
+                                      query={"query": task_name, "tags": ["monitoring-task", task_name], "tag_match_mode": "all"})
+                results = resp.get("results", []) if isinstance(resp, dict) else resp
+                if results and len(results) > 0:
                     return f"Error: A monitoring task named \\"{task_name}\\" already exists. Delete it first or use a different name."
             except Exception:
                 pass
@@ -213,8 +214,9 @@ def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str 
                 return "Error: Could not find own agent ID."
 
             # Search for entries tagged with this task name
-            results = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory/search",
-                                     query={"query": task_name, "tags": ["monitoring-task", task_name], "tag_match_mode": "all"})
+            resp = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory/search",
+                                  query={"query": task_name, "tags": ["monitoring-task", task_name], "tag_match_mode": "all"})
+            results = resp.get("results", []) if isinstance(resp, dict) else resp
 
             if not results:
                 return f"Error: No monitoring task named \\"{task_name}\\" found."
@@ -501,17 +503,19 @@ def create_personal_assistant(
     # Get the multi-agent broadcast tool for tag-based routing
     broadcast_tool = get_broadcast_tool(client)
 
-    # Find or create the coding sandbox tool
+    # Find or create the coding sandbox tool (always update source code)
     existing_tools = client.tools.list(name="execute_coding_task")
     if existing_tools.items:
         coding_tool = existing_tools.items[0]
+        client.tools.update(coding_tool.id, source_code=EXECUTE_CODING_TASK_SOURCE)
     else:
         coding_tool = client.tools.create(source_code=EXECUTE_CODING_TASK_SOURCE)
 
-    # Find or create the monitoring task management tool
+    # Find or create the monitoring task management tool (always update source code)
     existing_monitoring = client.tools.list(name="manage_monitoring_task")
     if existing_monitoring.items:
         monitoring_tool = existing_monitoring.items[0]
+        client.tools.update(monitoring_tool.id, source_code=MANAGE_MONITORING_TASK_SOURCE)
     else:
         monitoring_tool = client.tools.create(source_code=MANAGE_MONITORING_TASK_SOURCE)
 
