@@ -24,7 +24,7 @@ npm run build
 
 ## Environment Setup
 
-Copy `.env.template` to `.env` and configure:
+Discord bot settings are configured in the root `env.template` (copy to `.env`). Available settings:
 - **Letta**: `LETTA_API_KEY`, `LETTA_BASE_URL`, `LETTA_AGENT_ID`
 - **Letta Context**:
   - `LETTA_USE_SENDER_PREFIX`: Include sender info in message prefix
