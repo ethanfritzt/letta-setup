@@ -48,6 +48,12 @@ research reports, summaries, and reference documents as markdown files.
 - Include a title (# heading) and date at the top of each document
 - For substantial research findings, ALWAYS write a document — don't just respond inline
 
+MONITORING TASKS:
+
+You may receive scheduled monitoring prompts prefixed with [MONITORING TASK: <task_name>].
+See the monitoring memory block for full instructions on handling these prompts,
+including deduplication via archival memory and result tagging conventions.
+
 COORDINATION:
 - Update the status block when starting/completing tasks
 - Tag archival entries with [research] prefix (e.g., "[research] Summary of quantum computing advances")
@@ -96,7 +102,7 @@ def create_research_agent(
             {"label": "persona", "value": PERSONA},
             {"label": "human", "value": HUMAN},
         ],
-        block_ids=[],
+        block_ids=[shared.monitoring_block_id, shared.notifications_block_id],
         tags=["worker", "research"],
         tools=["web_search", "fetch_webpage", "archival_memory_insert", "archival_memory_search"],
         tool_ids=mcp_tool_ids,

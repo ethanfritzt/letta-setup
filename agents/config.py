@@ -36,6 +36,8 @@ class SharedResources:
     """Shared memory blocks and archives for cross-agent coordination."""
     guidelines_block_id: str
     status_block_id: str
+    monitoring_block_id: str
+    notifications_block_id: str
     shared_archive_id: str
 
 
@@ -356,6 +358,48 @@ Recent Activity:
 - (System initialized)
 """.strip()
 
+NOTIFICATIONS_DEFAULT = "# No pending notifications"
+
+MONITORING_DEFAULT = """# Monitoring Task Instructions
+
+## For the Personal Assistant
+
+You have a manage_monitoring_task tool for setting up recurring monitoring jobs on
+worker agents. It creates Letta scheduled messages that periodically wake a worker
+to search for items matching user-defined criteria.
+
+### Creating a task
+Call manage_monitoring_task(action="create", ...) with:
+- task_name: short unique ID (e.g., "house-search")
+- schedule_cron: cron expression (e.g., "0 */2 * * *" = every 2 hours)
+- target_agent_tags: comma-separated worker tags (e.g., "worker,research")
+- monitoring_prompt: detailed search instructions and criteria
+
+### Managing tasks
+- action="list" — show all active monitoring schedules
+- action="delete" with schedule_id — remove a schedule (use "list" first to get the ID)
+
+### Notification behavior
+When you receive a message about pending notifications, review the notifications
+block in your core memory. Surface the results to the user with full details and
+links. After delivering the results, clear the notifications block by replacing
+its content with "# No pending notifications" using core_memory_replace.
+
+## For Worker Agents
+
+When you receive a message prefixed with [MONITORING TASK: <task_name>]:
+1. Read the requirements/criteria in the prompt.
+2. Search archival for [monitoring:seen:<task_name>] to know what was already reported.
+3. Use web_search and fetch_webpage to find matching items.
+4. For each NEW match, insert two archival entries:
+   - [monitoring:result:<task_name>] <title, price, key details, URL>
+   - [monitoring:seen:<task_name>] <unique ID or URL>
+5. If no new matches, do not insert any entries.
+6. If new matches were found, write a summary to the notifications core memory block
+   using core_memory_replace. Format: "[monitoring:notify:<task_name>] Found N new items"
+   followed by a brief summary. This notifies the system without requiring a heartbeat.
+""".strip()
+
 
 def create_shared_blocks(client: Letta) -> dict[str, str]:
     """
@@ -391,7 +435,30 @@ def create_shared_blocks(client: Letta) -> dict[str, str]:
     status = "Created" if status_created else "Found existing"
     print(f"{status} shared status block: {status_id}")
 
-    return {"guidelines": guidelines_id, "status": status_id}
+    monitoring_id, monitoring_created = find_or_create_block(
+        client,
+        label="monitoring",
+        description="Monitoring task instructions for scheduled search jobs",
+        default_value=MONITORING_DEFAULT,
+    )
+    status = "Created" if monitoring_created else "Found existing"
+    print(f"{status} shared monitoring block: {monitoring_id}")
+
+    notifications_id, notifications_created = find_or_create_block(
+        client,
+        label="notifications",
+        description="Pending notifications from worker agents (monitoring results, alerts)",
+        default_value=NOTIFICATIONS_DEFAULT,
+    )
+    status = "Created" if notifications_created else "Found existing"
+    print(f"{status} shared notifications block: {notifications_id}")
+
+    return {
+        "guidelines": guidelines_id,
+        "status": status_id,
+        "monitoring": monitoring_id,
+        "notifications": notifications_id,
+    }
 
 
 def create_shared_archive(client: Letta) -> str:
@@ -443,6 +510,8 @@ def create_shared_resources(client: Letta) -> SharedResources:
     return SharedResources(
         guidelines_block_id=blocks["guidelines"],
         status_block_id=blocks["status"],
+        monitoring_block_id=blocks["monitoring"],
+        notifications_block_id=blocks["notifications"],
         shared_archive_id=archive_id,
     )
 

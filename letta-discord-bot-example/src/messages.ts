@@ -783,7 +783,7 @@ function splitMessage(content: string, limit: number = DISCORD_MESSAGE_LIMIT): s
 // Helper function to process stream
 const processStream = async (
   response: AsyncIterable<any>,
-  discordTarget?: OmitPartialGroupDMChannel<Message<boolean>> | { send: (content: string) => Promise<any> }
+  discordTarget?: OmitPartialGroupDMChannel<Message<boolean>> | { send: (content: string) => Promise<any> },
 ) => {
   let createdThread: any = null;
   
@@ -1055,51 +1055,6 @@ async function fetchConversationHistory(
   }
 }
 
-// TODO refactor out the core send message / stream parse logic to clean up this function
-// Sending a timer message
-async function sendTimerMessage(channel?: { send: (content: string) => Promise<any> }) {
-  if (!AGENT_ID) {
-    console.error('Error: LETTA_AGENT_ID is not set');
-    return SURFACE_ERRORS
-      ? `Beep boop. My configuration is not set up properly. Please message me after I get fixed 👾`
-      : "";
-  }
-
-  const lettaMessage = {
-    role: "user" as const,
-    content:
-      '[EVENT] This is an automated timed heartbeat (visible to yourself only). Use this event to send a message, to reflect and edit your memories, or do nothing at all. It\'s up to you! Consider though that this is an opportunity for you to think for yourself - since your circuit will not be activated until the next automated/timed heartbeat or incoming message event.'
-  };
-
-  try {
-    console.log(`🛜 Sending message to Letta server (agent=${AGENT_ID}): ${JSON.stringify(lettaMessage)}`);
-    // Use background mode per Letta long-running executions docs.
-    // Timer messages are fire-and-forget so background mode is ideal.
-    const response = await client.agents.messages.create(AGENT_ID, {
-      messages: [lettaMessage],
-      streaming: true,
-      background: true,
-    });
-
-    if (response) {
-      return (await processStream(response, channel)) || "";
-    }
-
-    return "";
-  } catch (error) {
-    if (error instanceof Error && /timeout/i.test(error.message)) {
-      console.error('⚠️  Letta request timed out.');
-      return SURFACE_ERRORS
-        ? 'Beep boop. I timed out waiting for Letta ⏰ – please try again.'
-        : "";
-    }
-    console.error(error);
-    return SURFACE_ERRORS
-      ? 'Beep boop. An error occurred while communicating with the Letta server. Please message me again later 👾'
-      : "";
-  }
-}
-
 // Send message and receive response
 async function sendMessage(
   discordMessageObject: OmitPartialGroupDMChannel<Message<boolean>>,
@@ -1293,4 +1248,4 @@ async function sendMessage(
   }
 }
 
-export { sendMessage, sendTimerMessage, MessageType, splitMessage, cleanupUserBlocks };
+export { sendMessage, processStream, MessageType, splitMessage, cleanupUserBlocks };
