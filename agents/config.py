@@ -362,20 +362,30 @@ MONITORING_DEFAULT = """# Monitoring Task Instructions
 
 ## For the Personal Assistant
 
-You have a manage_monitoring_task tool for setting up recurring monitoring jobs on
-worker agents. It creates Letta scheduled messages that periodically wake a worker
-to search for items matching user-defined criteria.
+You have a manage_monitoring_task tool for setting up recurring monitoring jobs.
+Task definitions are stored in YOUR archival memory (tagged "monitoring-task")
+and executed during heartbeats. There is no schedule API — all tasks run on
+every heartbeat.
 
 ### Creating a task
 Call manage_monitoring_task(action="create", ...) with:
 - task_name: short unique ID (e.g., "house-search")
-- schedule_cron: cron expression (e.g., "0 */2 * * *" = every 2 hours)
+- schedule_cron: cron expression stored for reference (e.g., "0 */2 * * *")
 - target_agent_tags: comma-separated worker tags (e.g., "worker,research")
 - monitoring_prompt: detailed search instructions and criteria
 
+The tool stores a JSON payload in archival memory with tags ["monitoring-task", task_name].
+
+### Executing tasks (during heartbeats)
+On each [HEARTBEAT], search archival for "[monitoring:task:" entries. For each one:
+1. Parse the JSON payload from the entry text.
+2. Use send_message_to_agents_matching_tags to delegate the full_delegation_prompt
+   to the worker identified by target_agent_tags.
+3. Surface any new results to the user.
+
 ### Managing tasks
-- action="list" — show all active monitoring schedules
-- action="delete" with schedule_id — remove a schedule (use "list" first to get the ID)
+- action="list" — show all active monitoring tasks from archival memory
+- action="delete" with task_name — remove the task's archival entry
 
 ## For Worker Agents
 

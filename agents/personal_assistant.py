@@ -30,7 +30,6 @@ from .config import (
 MANAGE_MONITORING_TASK_SOURCE = '''
 import os
 import json
-import time
 import urllib.parse
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
@@ -54,15 +53,6 @@ def _letta_request(method, path, body=None, query=None):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def _find_agent_by_tags(tags):
-    """Find an agent matching ALL of the given tags. Returns agent ID or None."""
-    query = {"tags": tags, "match_all_tags": "true", "limit": "1"}
-    agents = _letta_request("GET", "/v1/agents/", query=query)
-    if agents:
-        return agents[0]["id"]
-    return None
-
-
 def _find_self_agent_id():
     """Find this agent's own ID by looking for the supervisor/assistant agent."""
     query = {"tags": ["supervisor", "assistant"], "match_all_tags": "true", "limit": "1"}
@@ -72,47 +62,54 @@ def _find_self_agent_id():
     return None
 
 
-def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str = "", target_agent_tags: str = "", monitoring_prompt: str = "", schedule_id: str = "") -> str:
+def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str = "", target_agent_tags: str = "", monitoring_prompt: str = "") -> str:
     """
-    Create, list, or delete recurring monitoring tasks scheduled on yourself (the PA).
+    Create, list, or delete recurring monitoring tasks stored in archival memory.
 
-    When a scheduled monitoring message fires, you will receive it directly and should
-    delegate to the appropriate worker via send_message_to_agents_matching_tags, then
-    surface results to the user.
+    Monitoring tasks are stored as tagged archival memory entries and executed
+    during heartbeats. On each heartbeat, the PA searches archival memory for
+    monitoring task definitions and delegates each one to the appropriate worker.
 
     Args:
         action: One of "create", "list", or "delete".
         task_name: A short, unique name for the task (e.g., "house-search", "job-monitor").
                    Required for "create" and "delete".
-        schedule_cron: Cron expression for how often to run (e.g., "0 */2 * * *" for every
-                       2 hours, "0 9 * * *" for daily at 9am). Required for "create".
+        schedule_cron: Cron expression stored for reference (e.g., "0 */2 * * *").
+                       Tasks run on every heartbeat regardless. Required for "create".
         target_agent_tags: Comma-separated tags identifying which worker to delegate to
                           (e.g., "worker,research"). Required for "create".
         monitoring_prompt: The monitoring instructions describing what to search for and
                           the criteria. Required for "create".
-        schedule_id: The scheduled message ID to delete. Required for "delete".
 
     Returns:
-        A summary of what was done, including schedule IDs for reference.
+        A summary of what was done.
 
     Examples:
         manage_monitoring_task(action="create", task_name="house-search", schedule_cron="0 */2 * * *", target_agent_tags="worker,research", monitoring_prompt="Search Zillow for 3-bed houses under $500k...")
         manage_monitoring_task(action="list")
-        manage_monitoring_task(action="delete", task_name="house-search", schedule_id="scheduled_message-abc123")
+        manage_monitoring_task(action="delete", task_name="house-search")
     """
     try:
         if action == "create":
             if not all([task_name, schedule_cron, target_agent_tags, monitoring_prompt]):
                 return "Error: create requires task_name, schedule_cron, target_agent_tags, and monitoring_prompt."
 
-            # Schedule on the PA itself (self) so results flow through Discord directly
             self_agent_id = _find_self_agent_id()
             if not self_agent_id:
                 return "Error: Could not find own agent ID (supervisor/assistant tags)."
 
             tags = [t.strip() for t in target_agent_tags.split(",")]
 
-            # Build the monitoring prompt — the PA receives this and delegates to the worker
+            # Check for duplicate task name
+            try:
+                existing = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory/search",
+                                          query={"query": task_name, "tags": ["monitoring-task", task_name], "tag_match_mode": "all"})
+                if existing and len(existing) > 0:
+                    return f"Error: A monitoring task named \\"{task_name}\\" already exists. Delete it first or use a different name."
+            except Exception:
+                pass
+
+            # Build the full delegation prompt
             full_prompt = (
                 f"[MONITORING TASK: {task_name}] Delegate to worker with tags {tags}:\\n\\n"
                 f"{monitoring_prompt}\\n\\n"
@@ -129,131 +126,117 @@ def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str 
                 f"- If the worker found nothing new, briefly note it or stay silent."
             )
 
-            # Create the scheduled message on the PA
-            result = _letta_request("POST", f"/v1/agents/{self_agent_id}/schedule", body={
-                "messages": [{"role": "user", "content": full_prompt}],
-                "schedule": {"type": "recurring", "cron_expression": schedule_cron},
-            })
+            # Build the task payload
+            payload = {
+                "task_name": task_name,
+                "target_agent_tags": tags,
+                "monitoring_prompt": monitoring_prompt,
+                "cron_expression": schedule_cron,
+                "created_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                "full_delegation_prompt": full_prompt,
+            }
 
-            schedule_id_created = result.get("id", "unknown")
-            next_run = result.get("next_scheduled_at", "unknown")
+            # Store in archival memory with tags
+            _letta_request("POST", f"/v1/agents/{self_agent_id}/archival-memory", body={
+                "text": f"[monitoring:task:{task_name}] " + json.dumps(payload),
+                "tags": ["monitoring-task", task_name],
+            })
 
             return (
                 f"Monitoring task created successfully.\\n"
                 f"  Task name: {task_name}\\n"
-                f"  Schedule ID: {schedule_id_created}\\n"
-                f"  Scheduled on: self (PA agent {self_agent_id})\\n"
+                f"  Stored in: archival memory (tagged: monitoring-task, {task_name})\\n"
                 f"  Delegates to worker with tags: {tags}\\n"
-                f"  Cron: {schedule_cron}\\n"
-                f"  Next run: {next_run}\\n\\n"
-                f"When the schedule fires, you will receive the task directly, "
-                f"delegate to the worker, and surface results to the user immediately."
+                f"  Cron (reference): {schedule_cron}\\n\\n"
+                f"This task will execute on every heartbeat. The PA will search archival "
+                f"memory for monitoring tasks and delegate each one to the appropriate worker."
             )
 
         elif action == "list":
-            # Check schedules on the PA itself
             self_agent_id = _find_self_agent_id()
-            all_results = []
+            if not self_agent_id:
+                return "Error: Could not find own agent ID."
 
-            if self_agent_id:
-                try:
-                    data = _letta_request("GET", f"/v1/agents/{self_agent_id}/schedule",
-                                          query={"limit": "50"})
-                    messages = data.get("scheduled_messages", [])
-                    for msg in messages:
-                        content = ""
-                        msg_data = msg.get("message", {})
-                        msgs = msg_data.get("messages", [])
-                        if msgs:
-                            content = msgs[0].get("content", "")[:100]
-                        schedule = msg.get("schedule", {})
-                        all_results.append({
-                            "schedule_id": msg.get("id", "unknown"),
-                            "agent_id": self_agent_id,
-                            "agent_label": "PA (self)",
-                            "cron": schedule.get("cron_expression", schedule.get("type", "unknown")),
-                            "next_run": msg.get("next_scheduled_time", "unknown"),
-                            "prompt_preview": content,
+            # Search archival for monitoring task entries
+            results = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory",
+                                     query={"search": "[monitoring:task:", "limit": "50"})
+
+            # Filter to entries that have the monitoring-task tag
+            tasks = []
+            for entry in results:
+                entry_tags = entry.get("tags", [])
+                if "monitoring-task" in entry_tags:
+                    text = entry.get("text", "")
+                    # Parse JSON from after the prefix
+                    try:
+                        json_start = text.index("{")
+                        payload = json.loads(text[json_start:])
+                        tasks.append({
+                            "entry_id": entry.get("id", "unknown"),
+                            "task_name": payload.get("task_name", "unknown"),
+                            "target_tags": payload.get("target_agent_tags", []),
+                            "cron": payload.get("cron_expression", "unknown"),
+                            "created_at": payload.get("created_at", "unknown"),
+                            "prompt_preview": payload.get("monitoring_prompt", "")[:100],
                         })
-                except Exception:
-                    pass
-
-            # Also check legacy worker schedules for backwards compatibility
-            for tag_set in [["worker", "research"], ["worker", "task"]]:
-                agent_id = _find_agent_by_tags(tag_set)
-                if not agent_id:
-                    continue
-                try:
-                    data = _letta_request("GET", f"/v1/agents/{agent_id}/schedule",
-                                          query={"limit": "50"})
-                    messages = data.get("scheduled_messages", [])
-                    for msg in messages:
-                        content = ""
-                        msg_data = msg.get("message", {})
-                        msgs = msg_data.get("messages", [])
-                        if msgs:
-                            content = msgs[0].get("content", "")[:100]
-                        schedule = msg.get("schedule", {})
-                        all_results.append({
-                            "schedule_id": msg.get("id", "unknown"),
-                            "agent_id": agent_id,
-                            "agent_label": f"worker ({tag_set})",
-                            "cron": schedule.get("cron_expression", schedule.get("type", "unknown")),
-                            "next_run": msg.get("next_scheduled_time", "unknown"),
-                            "prompt_preview": content,
+                    except (ValueError, json.JSONDecodeError):
+                        tasks.append({
+                            "entry_id": entry.get("id", "unknown"),
+                            "task_name": "parse-error",
+                            "target_tags": [],
+                            "cron": "unknown",
+                            "created_at": "unknown",
+                            "prompt_preview": text[:100],
                         })
-                except Exception:
-                    continue
 
-            if not all_results:
+            if not tasks:
                 return "No active monitoring tasks found."
 
-            lines = ["Active monitoring tasks:\\n"]
-            for r in all_results:
+            lines = [f"Active monitoring tasks ({len(tasks)}):\\n"]
+            for t in tasks:
                 lines.append(
-                    f"  - Schedule ID: {r['schedule_id']}\\n"
-                    f"    Agent: {r['agent_id']} ({r['agent_label']})\\n"
-                    f"    Cron: {r['cron']}\\n"
-                    f"    Next run: {r['next_run']}\\n"
-                    f"    Prompt: {r['prompt_preview']}...\\n"
+                    f"  - Task: {t['task_name']}\\n"
+                    f"    Entry ID: {t['entry_id']}\\n"
+                    f"    Worker tags: {t['target_tags']}\\n"
+                    f"    Cron (reference): {t['cron']}\\n"
+                    f"    Created: {t['created_at']}\\n"
+                    f"    Prompt: {t['prompt_preview']}...\\n"
                 )
             return "\\n".join(lines)
 
         elif action == "delete":
-            if not schedule_id:
-                return "Error: delete requires schedule_id. Use action=\\"list\\" to find schedule IDs."
+            if not task_name:
+                return "Error: delete requires task_name. Use action=\\"list\\" to find task names."
 
-            # Try deleting from PA first, then fall back to workers
             self_agent_id = _find_self_agent_id()
-            if self_agent_id:
+            if not self_agent_id:
+                return "Error: Could not find own agent ID."
+
+            # Search for entries tagged with this task name
+            results = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory/search",
+                                     query={"query": task_name, "tags": ["monitoring-task", task_name], "tag_match_mode": "all"})
+
+            if not results:
+                return f"Error: No monitoring task named \\"{task_name}\\" found."
+
+            deleted_count = 0
+            for entry in results:
                 try:
-                    _letta_request("DELETE", f"/v1/agents/{self_agent_id}/schedule/{schedule_id}")
-                    return (
-                        f"Monitoring task deleted.\\n"
-                        f"  Schedule ID: {schedule_id}\\n"
-                        f"  Agent: {self_agent_id} (PA)\\n"
-                        f"Note: Historical results in archival memory are preserved."
-                    )
+                    entry_id = entry.get("id")
+                    if entry_id:
+                        _letta_request("DELETE", f"/v1/agents/{self_agent_id}/archival-memory/{entry_id}")
+                        deleted_count += 1
                 except Exception:
                     pass
 
-            # Fall back to checking worker agents (legacy schedules)
-            for tag_set in [["worker", "research"], ["worker", "task"]]:
-                agent_id = _find_agent_by_tags(tag_set)
-                if not agent_id:
-                    continue
-                try:
-                    _letta_request("DELETE", f"/v1/agents/{agent_id}/schedule/{schedule_id}")
-                    return (
-                        f"Monitoring task deleted.\\n"
-                        f"  Schedule ID: {schedule_id}\\n"
-                        f"  Agent: {agent_id} (worker)\\n"
-                        f"Note: Historical results in archival memory are preserved."
-                    )
-                except Exception:
-                    continue
+            if deleted_count == 0:
+                return f"Error: Found entries but could not delete them."
 
-            return f"Error: Could not find or delete schedule {schedule_id}. Check the ID with action=\\"list\\"."
+            return (
+                f"Monitoring task \\"{task_name}\\" deleted ({deleted_count} archival entry/entries removed).\\n"
+                f"Note: Historical results ([monitoring:result:{task_name}] and [monitoring:seen:{task_name}]) "
+                f"in worker archival memory are preserved."
+            )
 
         else:
             return f"Error: Unknown action \\"{action}\\". Use \\"create\\", \\"list\\", or \\"delete\\"."
@@ -441,25 +424,24 @@ clear description. The coding agent has skills that guide it on best practices.
 
 MONITORING TASKS (via manage_monitoring_task):
 
-Use this tool to set up recurring monitoring jobs. Monitoring tasks are scheduled
-on YOU (the PA), not on workers. When a scheduled monitoring message fires, you
-receive it directly, delegate to the appropriate worker, and surface results to the
-user immediately. See the monitoring memory block for full instructions.
+Use this tool to set up recurring monitoring jobs. Monitoring task definitions are
+stored in YOUR archival memory (tagged "monitoring-task") and executed during
+heartbeats. There is no schedule API — tasks run on every heartbeat.
 
-MONITORING TASK MESSAGES:
-You will receive [MONITORING TASK: <name>] messages on a schedule. When you do:
-1. Delegate the task to the appropriate worker using send_message_to_agents_matching_tags
-2. Review the worker's response
-3. Surface any new/notable results to the user immediately with full details
-4. If nothing new, briefly note it or stay silent
+When creating a task, provide: task_name, schedule_cron (stored for reference),
+target_agent_tags, and monitoring_prompt. The tool stores the full delegation
+prompt in archival memory. On each heartbeat, you search archival for these
+entries and delegate each one to the appropriate worker.
 
 HEARTBEAT MESSAGES:
 You will periodically receive [HEARTBEAT] messages. When you do:
-1. Check your TODO block. If it is empty or has no actionable items, stay silent.
-2. Pick ONE item from the TODO block and take action on it.
-3. After completing an item, mark it [DONE] and archive it to archival memory
+1. Search your archival memory for "[monitoring:task:" to find active monitoring tasks.
+   For each task found, parse the JSON payload and delegate to the appropriate worker
+   using send_message_to_agents_matching_tags with the full_delegation_prompt.
+2. Check your TODO block. If there are actionable items, pick one and work on it.
+   After completing an item, mark it [DONE] and archive it to archival memory
    with tag [todo-history], then remove it from the block.
-4. Do NOT take actions outside the TODO block during heartbeats.
+3. If there are no monitoring tasks and the TODO block is empty, stay silent.
 
 You and the user can both add items to the TODO block. When the user asks you
 to do something later, or you identify a follow-up worth tracking, add it as
