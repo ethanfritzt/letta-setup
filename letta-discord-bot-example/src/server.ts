@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { Client, GatewayIntentBits, Message, OmitPartialGroupDMChannel, Partials } from 'discord.js';
-import { sendMessage, sendTimerMessage, MessageType, splitMessage, cleanupUserBlocks } from './messages';
+import { sendMessage, MessageType, splitMessage, cleanupUserBlocks, processStream } from './messages';
 
 console.log('🚀 Starting Discord bot...');
 console.log('📋 Environment check:');
@@ -19,9 +19,8 @@ const RESPOND_TO_GENERIC = process.env.RESPOND_TO_GENERIC === 'true';
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;  // Optional: only listen in this channel
 const RESPONSE_CHANNEL_ID = process.env.DISCORD_RESPONSE_CHANNEL_ID;  // Optional: only respond in this channel
 const MESSAGE_REPLY_TRUNCATE_LENGTH = 100;  // how many chars to include
-const ENABLE_TIMER = process.env.ENABLE_TIMER === 'true';
-const TIMER_INTERVAL_MINUTES = parseInt(process.env.TIMER_INTERVAL_MINUTES || '15', 10);
-const FIRING_PROBABILITY = parseFloat(process.env.FIRING_PROBABILITY || '0.1');
+const NOTIFICATIONS_BLOCK_ID = process.env.NOTIFICATIONS_BLOCK_ID || '';
+const NOTIFICATION_CHECK_INTERVAL_MINUTES = parseInt(process.env.NOTIFICATION_CHECK_INTERVAL_MINUTES || '5', 10);
 const MESSAGE_BATCH_ENABLED = process.env.MESSAGE_BATCH_ENABLED === 'true';
 const MESSAGE_BATCH_SIZE = parseInt(process.env.MESSAGE_BATCH_SIZE || '10', 10);
 const MESSAGE_BATCH_TIMEOUT_MS = parseInt(process.env.MESSAGE_BATCH_TIMEOUT_MS || '30000', 10);
@@ -29,6 +28,9 @@ const REPLY_IN_THREADS = process.env.REPLY_IN_THREADS === 'true';
 const USER_BLOCKS_CLEANUP_INTERVAL_MINUTES = parseInt(process.env.USER_BLOCKS_CLEANUP_INTERVAL_MINUTES || '60', 10);
 const ENABLE_THREAD_CONVERSATIONS = process.env.ENABLE_THREAD_CONVERSATIONS === 'true';
 const THREAD_CONVERSATIONS_RESPOND_WITHOUT_MENTION = process.env.THREAD_CONVERSATIONS_RESPOND_WITHOUT_MENTION === 'true';
+const HEARTBEAT_ENABLED = process.env.HEARTBEAT_ENABLED === 'true';
+const HEARTBEAT_MIN_INTERVAL_MINUTES = parseInt(process.env.HEARTBEAT_MIN_INTERVAL_MINUTES || '20', 10);
+const HEARTBEAT_MAX_INTERVAL_MINUTES = parseInt(process.env.HEARTBEAT_MAX_INTERVAL_MINUTES || '60', 10);
 
 console.log('⚙️  Configuration:');
 console.log('  - RESPOND_TO_DMS:', RESPOND_TO_DMS);
@@ -283,68 +285,178 @@ async function processAndSendMessage(message: OmitPartialGroupDMChannel<Message<
 }
 
 
-// Function to start a randomized event timer with improved timing
-async function startRandomEventTimer() {
-  if (!ENABLE_TIMER) {
-      console.log("Timer feature is disabled.");
-      return;
+// Function to periodically check the notifications block for pending worker results.
+// Reads the block via the Letta REST API (zero inference cost). Only wakes the PA
+// when the block contains actual notification content.
+async function startNotificationChecker() {
+  if (!NOTIFICATIONS_BLOCK_ID) {
+    console.log("📋 Notification checker disabled (NOTIFICATIONS_BLOCK_ID not set).");
+    return;
   }
 
-  // Set a minimum delay to prevent too-frequent firing (at least 1 minute)
-  const minMinutes = 1;
-  // Generate random minutes between minMinutes and TIMER_INTERVAL_MINUTES
-  const randomMinutes = minMinutes + Math.floor(Math.random() * (TIMER_INTERVAL_MINUTES - minMinutes));
-  
-  // Log the next timer interval for debugging
-  console.log(`⏰ Timer scheduled to fire in ${randomMinutes} minutes`);
-  
-  const delay = randomMinutes * 60 * 1000; // Convert minutes to milliseconds
+  const AGENT_ID = process.env.LETTA_AGENT_ID;
+  if (!AGENT_ID) {
+    console.log("📋 Notification checker disabled (LETTA_AGENT_ID not set).");
+    return;
+  }
 
-  setTimeout(async () => {
-      console.log(`⏰ Timer fired after ${randomMinutes} minutes`);
-      
-      // Determine if the event should fire based on the probability
-      if (Math.random() < FIRING_PROBABILITY) {
-          console.log(`⏰ Random event triggered (${FIRING_PROBABILITY * 100}% chance)`);
+  const intervalMs = NOTIFICATION_CHECK_INTERVAL_MINUTES * 60 * 1000;
+  console.log(`📋 Notification checker started (every ${NOTIFICATION_CHECK_INTERVAL_MINUTES} minutes, block=${NOTIFICATIONS_BLOCK_ID})`);
 
-          // Get the channel if available
-          let channel: { send: (content: string) => Promise<any> } | undefined = undefined;
-          if (CHANNEL_ID) {
-              try {
-                  const fetchedChannel = await client.channels.fetch(CHANNEL_ID);
-                  if (fetchedChannel && 'send' in fetchedChannel) {
-                      channel = fetchedChannel as any;
-                  } else {
-                      console.log("⏰ Channel not found or is not a text channel.");
-                  }
-              } catch (error) {
-                  console.error("⏰ Error fetching channel:", error);
-              }
-          }
-
-          // Generate the response via the API, passing the channel for async messages
-          const msg = await sendTimerMessage(channel);
-
-          // Send the final assistant message if there is one
-          if (msg !== "" && channel) {
-              try {
-                  await sendSplitMessage(channel, msg);
-                  console.log(`⏰ Timer message sent to channel (${msg.length} chars)`);
-              } catch (error) {
-                  console.error("⏰ Error sending timer message:", error);
-              }
-          } else if (!channel) {
-              console.log("⏰ No CHANNEL_ID defined or channel not available; message not sent.");
-          }
-      } else {
-          console.log(`⏰ Random event not triggered (${(1 - FIRING_PROBABILITY) * 100}% chance)`);
+  const checkNotifications = async () => {
+    try {
+      const baseUrl = process.env.LETTA_BASE_URL || 'http://localhost:8283';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const apiKey = process.env.LETTA_API_KEY;
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
       }
-      
-      // Schedule the next timer with a small delay to prevent immediate restarts
-      setTimeout(() => {
-          startRandomEventTimer(); 
-      }, 1000); // 1 second delay before scheduling next timer
-  }, delay);
+
+      // Read the notifications block (zero inference cost — just a REST call)
+      const blockRes = await fetch(`${baseUrl}/v1/blocks/${NOTIFICATIONS_BLOCK_ID}`, { headers });
+      if (!blockRes.ok) {
+        console.error(`📋 Failed to read notifications block: ${blockRes.status}`);
+        return;
+      }
+
+      const block = await blockRes.json();
+      const value: string = block.value || '';
+
+      // Check if block has real content (not just the default placeholder)
+      if (!value.trim() || value.trim() === '# No pending notifications') {
+        console.log('📋 No pending notifications — skipping (zero tokens spent).');
+        return;
+      }
+
+      console.log(`📋 Pending notifications found:\n${value}`);
+
+      // Get the channel to deliver results
+      let channel: { send: (content: string) => Promise<any> } | undefined = undefined;
+      if (CHANNEL_ID) {
+        try {
+          const fetchedChannel = await client.channels.fetch(CHANNEL_ID);
+          if (fetchedChannel && 'send' in fetchedChannel) {
+            channel = fetchedChannel as any;
+          }
+        } catch (error) {
+          console.error("📋 Error fetching channel:", error);
+        }
+      }
+
+      // Wake the PA with a notification message
+      const Letta = (await import('@letta-ai/letta-client')).default;
+      const lettaClient = new Letta({
+        apiKey: apiKey || 'your_letta_api_key',
+        baseURL: baseUrl,
+      });
+
+      const notificationMessage = {
+        role: "user" as const,
+        content:
+          '[NOTIFICATION] You have pending notifications in your notifications block. ' +
+          'Review the notifications block in your core memory, surface the results to the user ' +
+          'with full details and links, then clear the block by replacing its content with ' +
+          '"# No pending notifications".'
+      };
+
+      console.log(`📋 Waking PA to surface notifications (agent=${AGENT_ID})`);
+      const response = await lettaClient.agents.messages.create(AGENT_ID, {
+        messages: [notificationMessage],
+        streaming: true,
+        background: true,
+      });
+
+      if (response) {
+        await processStream(response, channel);
+        console.log('📋 Notification delivery complete.');
+      }
+    } catch (error) {
+      console.error('📋 Error checking notifications:', error);
+    }
+
+    // Schedule the next check
+    setTimeout(checkNotifications, intervalMs);
+  };
+
+  // Start the first check after the interval
+  setTimeout(checkNotifications, intervalMs);
+}
+
+// Reflective heartbeat — periodically sends a check-in message to the PA
+// so it can be proactive with full conversation context.
+async function startHeartbeat() {
+  if (!HEARTBEAT_ENABLED) {
+    console.log("💓 Heartbeat disabled (HEARTBEAT_ENABLED not set to true).");
+    return;
+  }
+
+  const AGENT_ID = process.env.LETTA_AGENT_ID;
+  if (!AGENT_ID) {
+    console.log("💓 Heartbeat disabled (LETTA_AGENT_ID not set).");
+    return;
+  }
+
+  console.log(`💓 Heartbeat started (interval: ${HEARTBEAT_MIN_INTERVAL_MINUTES}-${HEARTBEAT_MAX_INTERVAL_MINUTES} minutes)`);
+
+  const scheduleNextHeartbeat = () => {
+    const minMs = HEARTBEAT_MIN_INTERVAL_MINUTES * 60 * 1000;
+    const maxMs = HEARTBEAT_MAX_INTERVAL_MINUTES * 60 * 1000;
+    const intervalMs = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+    const intervalMin = (intervalMs / 60000).toFixed(1);
+
+    console.log(`💓 Next heartbeat in ${intervalMin} minutes`);
+
+    setTimeout(async () => {
+      try {
+        // Get the channel to deliver any proactive messages
+        let channel: { send: (content: string) => Promise<any> } | undefined = undefined;
+        if (CHANNEL_ID) {
+          try {
+            const fetchedChannel = await client.channels.fetch(CHANNEL_ID);
+            if (fetchedChannel && 'send' in fetchedChannel) {
+              channel = fetchedChannel as any;
+            }
+          } catch (error) {
+            console.error("💓 Error fetching channel:", error);
+          }
+        }
+
+        const Letta = (await import('@letta-ai/letta-client')).default;
+        const lettaClient = new Letta({
+          apiKey: process.env.LETTA_API_KEY || 'your_letta_api_key',
+          baseURL: process.env.LETTA_BASE_URL || 'http://localhost:8283',
+        });
+
+        const heartbeatMessage = {
+          role: "user" as const,
+          content:
+            '[HEARTBEAT] This is a scheduled check-in. Review your recent conversation context ' +
+            'and status block. If there is anything worth following up on, proactively reaching ' +
+            'out about, or acting on — do so now. Otherwise, stay silent.'
+        };
+
+        console.log(`💓 Sending heartbeat to PA (agent=${AGENT_ID})`);
+        const response = await lettaClient.agents.messages.create(AGENT_ID, {
+          messages: [heartbeatMessage],
+          streaming: true,
+          background: true,
+        });
+
+        if (response) {
+          await processStream(response, channel);
+          console.log('💓 Heartbeat complete.');
+        }
+      } catch (error) {
+        console.error('💓 Error during heartbeat:', error);
+      }
+
+      // Schedule the next heartbeat
+      scheduleNextHeartbeat();
+    }, intervalMs);
+  };
+
+  // Start the first heartbeat cycle
+  scheduleNextHeartbeat();
 }
 
 // Handle messages mentioning the bot
@@ -502,7 +614,8 @@ app.listen(PORT, async () => {
     console.log('🔐 Attempting Discord login...');
     await client.login(process.env.DISCORD_TOKEN);
     console.log('✅ Discord login successful');
-    startRandomEventTimer();
+    startNotificationChecker();
+    startHeartbeat();
   } catch (error) {
     console.error('❌ Discord login failed:', error);
     process.exit(1);
