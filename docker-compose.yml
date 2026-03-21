@@ -4,6 +4,9 @@ services:
   letta-server:
     image: letta/letta:0.16.6
     container_name: letta-server
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "3001:3001"
     volumes:
@@ -19,12 +22,17 @@ services:
       # Increase tool sandbox timeout to 10 minutes (default is 180s = 3 min)
       # Coding tasks via execute_coding_task can take 3-5 minutes
       - TOOL_SANDBOX_TIMEOUT=600
+      # Ollama for local embeddings (archival memory)
+      - OLLAMA_BASE_URL=http://ollama:11434
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/v1/health"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
+    depends_on:
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── Coding Sandbox Service ────────────────────────────────────────
@@ -85,3 +93,23 @@ services:
       coding-sandbox:
         condition: service_healthy
     restart: unless-stopped
+
+  # ── Ollama (local embedding model) ──────────────────────────────
+  # Provides local embeddings for archival memory. The letta/letta-free
+  # hosted service is deprecated; this replaces it with a self-hosted model.
+  # After first start, pull the model: docker compose exec ollama ollama pull mxbai-embed-large
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
