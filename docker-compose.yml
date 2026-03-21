@@ -97,18 +97,25 @@ services:
   # ── Ollama (local embedding model) ──────────────────────────────
   # Provides local embeddings for archival memory. The letta/letta-free
   # hosted service is deprecated; this replaces it with a self-hosted model.
-  # After first start, pull the model: docker compose exec ollama ollama pull mxbai-embed-large
+  # The entrypoint auto-pulls the embedding model on startup (no-op if cached).
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     volumes:
       - ollama_data:/root/.ollama
+    entrypoint: >
+      /bin/sh -c "
+        /bin/ollama serve &
+        until ollama list >/dev/null 2>&1; do sleep 1; done;
+        ollama pull mxbai-embed-large;
+        wait
+      "
     healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
+      test: ["CMD-SHELL", "ollama list | grep -q mxbai-embed-large"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 30
+      start_period: 30s
     restart: unless-stopped
 
 volumes:
