@@ -331,9 +331,11 @@ async function startHeartbeat() {
         const heartbeatMessage = {
           role: "user" as const,
           content:
-            '[HEARTBEAT] This is a scheduled check-in. Review your TODO block. ' +
-            'If there are actionable items, pick one and work on it. ' +
-            'If the TODO block is empty, stay silent.'
+            '[HEARTBEAT] This is a scheduled check-in.\n' +
+            'First, search your archival memory for "[monitoring:task:" to find active monitoring tasks. ' +
+            'For each task found, parse the JSON and delegate to the appropriate worker.\n' +
+            'Then, review your TODO block. If there are actionable items, pick one and work on it.\n' +
+            'If there are no monitoring tasks and the TODO block is empty, stay silent.'
         };
 
         console.log(`💓 Sending heartbeat to PA (agent=${AGENT_ID})`);
