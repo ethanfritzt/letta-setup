@@ -5,7 +5,7 @@ services:
     image: letta/letta:0.16.6
     container_name: letta-server
     ports:
-      - "8283:8283"
+      - "3001:3001"
     volumes:
       - ~/.letta/.persist/pgdata:/var/lib/postgresql/data
       - ${DOCUMENT_STORE_PATH:-./space}:/documents
@@ -20,7 +20,7 @@ services:
       # Coding tasks via execute_coding_task can take 3-5 minutes
       - TOOL_SANDBOX_TIMEOUT=600
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8283/v1/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3001/v1/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -45,7 +45,7 @@ services:
       - ./agents/skills:/app/skills:ro
     environment:
       # Connect back to Letta server for LLM calls and memory
-      - LETTA_BASE_URL=http://letta-server:8283
+      - LETTA_BASE_URL=http://letta-server:3001
       - PORT=3002
       - WORKSPACE_ROOT=/workspace
       - TASK_TIMEOUT_MS=600000
@@ -78,7 +78,7 @@ services:
     environment:
       # Override LETTA_BASE_URL so the bot reaches the server
       # by Docker service name, not localhost
-      - LETTA_BASE_URL=http://letta-server:8283
+      - LETTA_BASE_URL=http://letta-server:3001
     depends_on:
       letta-server:
         condition: service_healthy
