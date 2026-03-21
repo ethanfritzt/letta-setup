@@ -37,7 +37,7 @@ class SharedResources:
     guidelines_block_id: str
     status_block_id: str
     monitoring_block_id: str
-    notifications_block_id: str
+    todo_block_id: str
     shared_archive_id: str
 
 
@@ -358,8 +358,6 @@ Recent Activity:
 - (System initialized)
 """.strip()
 
-NOTIFICATIONS_DEFAULT = "# No pending notifications"
-
 MONITORING_DEFAULT = """# Monitoring Task Instructions
 
 ## For the Personal Assistant
@@ -379,12 +377,6 @@ Call manage_monitoring_task(action="create", ...) with:
 - action="list" — show all active monitoring schedules
 - action="delete" with schedule_id — remove a schedule (use "list" first to get the ID)
 
-### Notification behavior
-When you receive a message about pending notifications, review the notifications
-block in your core memory. Surface the results to the user with full details and
-links. After delivering the results, clear the notifications block by replacing
-its content with "# No pending notifications" using core_memory_replace.
-
 ## For Worker Agents
 
 When you receive a message prefixed with [MONITORING TASK: <task_name>]:
@@ -395,9 +387,18 @@ When you receive a message prefixed with [MONITORING TASK: <task_name>]:
    - [monitoring:result:<task_name>] <title, price, key details, URL>
    - [monitoring:seen:<task_name>] <unique ID or URL>
 5. If no new matches, do not insert any entries.
-6. If new matches were found, write a summary to the notifications core memory block
-   using core_memory_replace. Format: "[monitoring:notify:<task_name>] Found N new items"
-   followed by a brief summary. This notifies the system without requiring a heartbeat.
+6. Include links/URLs for all results. The PA will surface results to the user directly.
+""".strip()
+
+
+TODO_DEFAULT = """# TODO / Roadmap
+Items here guide what the PA works on during heartbeats.
+The PA and user can both add items. Mark items [DONE] when complete,
+then archive to archival memory (tag: todo-history).
+Keep to 5-10 active items max.
+
+Active:
+- (No items yet — PA stays silent during heartbeats until items are added)
 """.strip()
 
 
@@ -444,20 +445,20 @@ def create_shared_blocks(client: Letta) -> dict[str, str]:
     status = "Created" if monitoring_created else "Found existing"
     print(f"{status} shared monitoring block: {monitoring_id}")
 
-    notifications_id, notifications_created = find_or_create_block(
+    todo_id, todo_created = find_or_create_block(
         client,
-        label="notifications",
-        description="Pending notifications from worker agents (monitoring results, alerts)",
-        default_value=NOTIFICATIONS_DEFAULT,
+        label="todo",
+        description="TODO list guiding PA heartbeat actions",
+        default_value=TODO_DEFAULT,
     )
-    status = "Created" if notifications_created else "Found existing"
-    print(f"{status} shared notifications block: {notifications_id}")
+    status = "Created" if todo_created else "Found existing"
+    print(f"{status} shared todo block: {todo_id}")
 
     return {
         "guidelines": guidelines_id,
         "status": status_id,
         "monitoring": monitoring_id,
-        "notifications": notifications_id,
+        "todo": todo_id,
     }
 
 
@@ -511,7 +512,7 @@ def create_shared_resources(client: Letta) -> SharedResources:
         guidelines_block_id=blocks["guidelines"],
         status_block_id=blocks["status"],
         monitoring_block_id=blocks["monitoring"],
-        notifications_block_id=blocks["notifications"],
+        todo_block_id=blocks["todo"],
         shared_archive_id=archive_id,
     )
 

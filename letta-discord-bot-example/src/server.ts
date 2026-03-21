@@ -19,8 +19,6 @@ const RESPOND_TO_GENERIC = process.env.RESPOND_TO_GENERIC === 'true';
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;  // Optional: only listen in this channel
 const RESPONSE_CHANNEL_ID = process.env.DISCORD_RESPONSE_CHANNEL_ID;  // Optional: only respond in this channel
 const MESSAGE_REPLY_TRUNCATE_LENGTH = 100;  // how many chars to include
-const NOTIFICATIONS_BLOCK_ID = process.env.NOTIFICATIONS_BLOCK_ID || '';
-const NOTIFICATION_CHECK_INTERVAL_MINUTES = parseInt(process.env.NOTIFICATION_CHECK_INTERVAL_MINUTES || '5', 10);
 const MESSAGE_BATCH_ENABLED = process.env.MESSAGE_BATCH_ENABLED === 'true';
 const MESSAGE_BATCH_SIZE = parseInt(process.env.MESSAGE_BATCH_SIZE || '10', 10);
 const MESSAGE_BATCH_TIMEOUT_MS = parseInt(process.env.MESSAGE_BATCH_TIMEOUT_MS || '30000', 10);
@@ -285,103 +283,6 @@ async function processAndSendMessage(message: OmitPartialGroupDMChannel<Message<
 }
 
 
-// Function to periodically check the notifications block for pending worker results.
-// Reads the block via the Letta REST API (zero inference cost). Only wakes the PA
-// when the block contains actual notification content.
-async function startNotificationChecker() {
-  if (!NOTIFICATIONS_BLOCK_ID) {
-    console.log("📋 Notification checker disabled (NOTIFICATIONS_BLOCK_ID not set).");
-    return;
-  }
-
-  const AGENT_ID = process.env.LETTA_AGENT_ID;
-  if (!AGENT_ID) {
-    console.log("📋 Notification checker disabled (LETTA_AGENT_ID not set).");
-    return;
-  }
-
-  const intervalMs = NOTIFICATION_CHECK_INTERVAL_MINUTES * 60 * 1000;
-  console.log(`📋 Notification checker started (every ${NOTIFICATION_CHECK_INTERVAL_MINUTES} minutes, block=${NOTIFICATIONS_BLOCK_ID})`);
-
-  const checkNotifications = async () => {
-    try {
-      const baseUrl = process.env.LETTA_BASE_URL || 'http://localhost:8283';
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const apiKey = process.env.LETTA_API_KEY;
-      if (apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
-
-      // Read the notifications block (zero inference cost — just a REST call)
-      const blockRes = await fetch(`${baseUrl}/v1/blocks/${NOTIFICATIONS_BLOCK_ID}`, { headers });
-      if (!blockRes.ok) {
-        console.error(`📋 Failed to read notifications block: ${blockRes.status}`);
-        return;
-      }
-
-      const block = await blockRes.json();
-      const value: string = block.value || '';
-
-      // Check if block has real content (not just the default placeholder)
-      if (!value.trim() || value.trim() === '# No pending notifications') {
-        console.log('📋 No pending notifications — skipping (zero tokens spent).');
-        return;
-      }
-
-      console.log(`📋 Pending notifications found:\n${value}`);
-
-      // Get the channel to deliver results
-      let channel: { send: (content: string) => Promise<any> } | undefined = undefined;
-      if (CHANNEL_ID) {
-        try {
-          const fetchedChannel = await client.channels.fetch(CHANNEL_ID);
-          if (fetchedChannel && 'send' in fetchedChannel) {
-            channel = fetchedChannel as any;
-          }
-        } catch (error) {
-          console.error("📋 Error fetching channel:", error);
-        }
-      }
-
-      // Wake the PA with a notification message
-      const Letta = (await import('@letta-ai/letta-client')).default;
-      const lettaClient = new Letta({
-        apiKey: apiKey || 'your_letta_api_key',
-        baseURL: baseUrl,
-      });
-
-      const notificationMessage = {
-        role: "user" as const,
-        content:
-          '[NOTIFICATION] You have pending notifications in your notifications block. ' +
-          'Review the notifications block in your core memory, surface the results to the user ' +
-          'with full details and links, then clear the block by replacing its content with ' +
-          '"# No pending notifications".'
-      };
-
-      console.log(`📋 Waking PA to surface notifications (agent=${AGENT_ID})`);
-      const response = await lettaClient.agents.messages.create(AGENT_ID, {
-        messages: [notificationMessage],
-        streaming: true,
-        background: true,
-      });
-
-      if (response) {
-        await processStream(response, channel);
-        console.log('📋 Notification delivery complete.');
-      }
-    } catch (error) {
-      console.error('📋 Error checking notifications:', error);
-    }
-
-    // Schedule the next check
-    setTimeout(checkNotifications, intervalMs);
-  };
-
-  // Start the first check after the interval
-  setTimeout(checkNotifications, intervalMs);
-}
-
 // Reflective heartbeat — periodically sends a check-in message to the PA
 // so it can be proactive with full conversation context.
 async function startHeartbeat() {
@@ -430,9 +331,9 @@ async function startHeartbeat() {
         const heartbeatMessage = {
           role: "user" as const,
           content:
-            '[HEARTBEAT] This is a scheduled check-in. Review your recent conversation context ' +
-            'and status block. If there is anything worth following up on, proactively reaching ' +
-            'out about, or acting on — do so now. Otherwise, stay silent.'
+            '[HEARTBEAT] This is a scheduled check-in. Review your TODO block. ' +
+            'If there are actionable items, pick one and work on it. ' +
+            'If the TODO block is empty, stay silent.'
         };
 
         console.log(`💓 Sending heartbeat to PA (agent=${AGENT_ID})`);
@@ -614,7 +515,6 @@ app.listen(PORT, async () => {
     console.log('🔐 Attempting Discord login...');
     await client.login(process.env.DISCORD_TOKEN);
     console.log('✅ Discord login successful');
-    startNotificationChecker();
     startHeartbeat();
   } catch (error) {
     console.error('❌ Discord login failed:', error);

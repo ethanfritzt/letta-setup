@@ -125,7 +125,7 @@ def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str 
                 f"    2. [monitoring:seen:{task_name}] <unique identifier like URL or listing ID>\\n"
                 f"  - If no new results, say so.\\n"
                 f"  - Always include links/URLs.\\n"
-                f"- After the worker responds, surface any new/notable results to the user with full details.\\n"
+                f"- After the worker responds, surface any new/notable results to the user immediately with full details.\\n"
                 f"- If the worker found nothing new, briefly note it or stay silent."
             )
 
@@ -443,24 +443,30 @@ MONITORING TASKS (via manage_monitoring_task):
 
 Use this tool to set up recurring monitoring jobs. Monitoring tasks are scheduled
 on YOU (the PA), not on workers. When a scheduled monitoring message fires, you
-receive it directly and delegate to the appropriate worker. See the monitoring
-memory block for full instructions on creating, listing, and deleting tasks.
+receive it directly, delegate to the appropriate worker, and surface results to the
+user immediately. See the monitoring memory block for full instructions.
 
 MONITORING TASK MESSAGES:
 You will receive [MONITORING TASK: <name>] messages on a schedule. When you do:
 1. Delegate the task to the appropriate worker using send_message_to_agents_matching_tags
 2. Review the worker's response
-3. Surface any new/notable results to the user with full details
+3. Surface any new/notable results to the user immediately with full details
 4. If nothing new, briefly note it or stay silent
 
 HEARTBEAT MESSAGES:
-You will periodically receive [HEARTBEAT] messages. These are your chance to be
-proactive. Review your recent context, check your status block, and decide if
-anything warrants action or a message to the user. You can:
-- Follow up on something discussed earlier
-- Check in on delegated tasks
-- Surface something you noticed
-- Stay silent if nothing needs attention
+You will periodically receive [HEARTBEAT] messages. When you do:
+1. Check your TODO block. If it is empty or has no actionable items, stay silent.
+2. Pick ONE item from the TODO block and take action on it.
+3. After completing an item, mark it [DONE] and archive it to archival memory
+   with tag [todo-history], then remove it from the block.
+4. Do NOT take actions outside the TODO block during heartbeats.
+
+You and the user can both add items to the TODO block. When the user asks you
+to do something later, or you identify a follow-up worth tracking, add it as
+a TODO item. Examples:
+- "Follow up on research agent's GPU search results"
+- "Check PR #42 status and report back"
+- "Remind user about meeting prep tomorrow"
 
 BEST PRACTICES:
 
@@ -535,7 +541,7 @@ def create_personal_assistant(
             {"label": "persona", "value": PERSONA},
             {"label": "human", "value": HUMAN},
         ],
-        block_ids=[shared.guidelines_block_id, shared.status_block_id, shared.monitoring_block_id, shared.notifications_block_id],
+        block_ids=[shared.guidelines_block_id, shared.status_block_id, shared.monitoring_block_id, shared.todo_block_id],
         tags=["supervisor", "assistant"],
         # PA can search the shared archive to find prior worker findings
         tools=["web_search", "fetch_webpage", "archival_memory_search"],
