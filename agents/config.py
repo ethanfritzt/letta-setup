@@ -487,18 +487,6 @@ def create_shared_resources(client: Letta) -> SharedResources:
     )
 
 
-def attach_archive_to_agent(client: Letta, archive_id: str, agent_id: str) -> None:
-    """
-    Attach a shared archive to an agent.
-
-    Args:
-        client: Letta client instance
-        archive_id: ID of the archive to attach
-        agent_id: ID of the agent to attach the archive to
-    """
-    client.agents.archives.attach(archive_id, agent_id=agent_id)
-
-
 def build_mcp_tool_rules(tool_names: list[str], max_count: int = 5) -> list[dict]:
     """
     Build tool rules to limit MCP tool calls per step.
