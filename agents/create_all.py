@@ -32,7 +32,7 @@ Environment variables:
     DOCUMENT_STORE_PATH     - Path to document store directory (optional)
 """
 
-from .config import get_config, get_client, create_shared_resources, build_mcp_tool_rules
+from .config import get_config, get_client, get_agent_model, create_shared_resources, build_mcp_tool_rules
 from .mcp_setup import setup_mcp_servers, get_mcp_tool_ids, get_mcp_tool_names
 from .research_agent import create_research_agent
 from .task_agent import create_task_agent
@@ -65,7 +65,11 @@ def create_all_agents():
     client = get_client(config)
 
     print(f"Connecting to Letta at {config.base_url}")
-    print(f"Using model: {config.model}")
+    print(f"Using model: {config.model} (global default)")
+    print(f"  PA:            {get_agent_model('pa', config)}")
+    print(f"  Research:      {get_agent_model('research', config)}")
+    print(f"  Task:          {get_agent_model('task', config)}")
+    print(f"  HomeAssistant: {get_agent_model('homeassistant', config)}")
     print(f"Using embedding: {config.embedding}")
     print()
 

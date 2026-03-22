@@ -17,6 +17,7 @@ from .config import (
     AgentConfig,
     SharedResources,
     SUPERVISOR_TOOL_RULES,
+    get_agent_model,
     get_broadcast_tool,
     find_or_create_agent,
     ensure_archive_attached,
@@ -470,6 +471,13 @@ def create_personal_assistant(
     Returns:
         Tuple of (agent, was_created)
     """
+    # Resolve per-agent model override (falls back to config.model if LETTA_MODEL_PA is not set)
+    agent_config = AgentConfig(
+        base_url=config.base_url,
+        model=get_agent_model("pa", config),
+        embedding=config.embedding,
+    )
+
     # Get the multi-agent broadcast tool for tag-based routing
     broadcast_tool = get_broadcast_tool(client)
 
@@ -492,7 +500,7 @@ def create_personal_assistant(
     agent, was_created = find_or_create_agent(
         client,
         name="PersonalAssistant",
-        config=config,
+        config=agent_config,
         memory_blocks=[
             {"label": "persona", "value": PERSONA},
             {"label": "human", "value": HUMAN},

@@ -11,6 +11,7 @@ from .config import (
     AgentConfig,
     SharedResources,
     WORKER_TOOL_RULES,
+    get_agent_model,
     find_or_create_agent,
     ensure_archive_attached,
 )
@@ -91,13 +92,20 @@ def create_research_agent(
     Returns:
         Tuple of (agent, was_created)
     """
+    # Resolve per-agent model override (falls back to config.model if LETTA_MODEL_RESEARCH is not set)
+    agent_config = AgentConfig(
+        base_url=config.base_url,
+        model=get_agent_model("research", config),
+        embedding=config.embedding,
+    )
+
     # Combine worker tool rules with MCP-specific rules
     all_tool_rules = WORKER_TOOL_RULES + (mcp_tool_rules or [])
 
     agent, was_created = find_or_create_agent(
         client,
         name="ResearchAgent",
-        config=config,
+        config=agent_config,
         memory_blocks=[
             {"label": "persona", "value": PERSONA},
             {"label": "human", "value": HUMAN},
