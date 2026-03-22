@@ -62,13 +62,49 @@ def _find_self_agent_id():
     return None
 
 
+def _get_monitoring_block(agent_id):
+    """Get the monitoring block's ID and parsed JSON data.
+
+    Returns (block_id, data) where data is a dict with a "tasks" key.
+    If the block contains non-JSON content (e.g. old instructions),
+    returns an empty tasks dict — the caller can overwrite on save.
+    """
+    blocks = _letta_request("GET", f"/v1/agents/{agent_id}/blocks/")
+    for block in blocks:
+        if block.get("label") == "monitoring":
+            block_id = block["id"]
+            value = block.get("value", "")
+            try:
+                data = json.loads(value)
+                if "tasks" not in data:
+                    data["tasks"] = {}
+                return block_id, data
+            except (json.JSONDecodeError, TypeError):
+                return block_id, {"tasks": {}}
+    return None, {"tasks": {}}
+
+
+def _save_monitoring_block(block_id, data):
+    """Save monitoring task data back to the block.
+
+    Raises ValueError if the serialized JSON exceeds the safe size limit.
+    """
+    value = json.dumps(data)
+    if len(value) > 4500:
+        raise ValueError(
+            f"Monitoring block would be {len(value)} chars (limit ~4500). "
+            f"Delete some tasks or shorten monitoring prompts."
+        )
+    _letta_request("PATCH", f"/v1/blocks/{block_id}", body={"value": value})
+
+
 def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str = "", target_agent_tags: str = "", monitoring_prompt: str = "") -> str:
     """
-    Create, list, or delete recurring monitoring tasks stored in archival memory.
+    Create, list, or delete recurring monitoring tasks stored in a memory block.
 
-    Monitoring tasks are stored as tagged archival memory entries and executed
-    during heartbeats. On each heartbeat, the PA searches archival memory for
-    monitoring task definitions and delegates each one to the appropriate worker.
+    Monitoring tasks are stored as JSON in the PA's monitoring memory block and
+    executed during heartbeats. On each heartbeat, the PA reads the block and
+    delegates each task to the appropriate worker.
 
     Args:
         action: One of "create", "list", or "delete".
@@ -98,59 +134,37 @@ def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str 
             if not self_agent_id:
                 return "Error: Could not find own agent ID (supervisor/assistant tags)."
 
+            block_id, data = _get_monitoring_block(self_agent_id)
+            if not block_id:
+                return "Error: Could not find monitoring memory block on this agent."
+
+            if task_name in data["tasks"]:
+                return f"Error: A monitoring task named \\"{task_name}\\" already exists. Delete it first or use a different name."
+
             tags = [t.strip() for t in target_agent_tags.split(",")]
 
-            # Check for duplicate task name
-            try:
-                resp = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory/search",
-                                      query={"query": task_name, "tags": ["monitoring-task", task_name], "tag_match_mode": "all"})
-                results = resp.get("results", []) if isinstance(resp, dict) else resp
-                if results and len(results) > 0:
-                    return f"Error: A monitoring task named \\"{task_name}\\" already exists. Delete it first or use a different name."
-            except Exception:
-                pass
-
-            # Build the full delegation prompt
-            full_prompt = (
-                f"[MONITORING TASK: {task_name}] Delegate to worker with tags {tags}:\\n\\n"
-                f"{monitoring_prompt}\\n\\n"
-                f"DELEGATION INSTRUCTIONS:\\n"
-                f"- Use send_message_to_agents_matching_tags to send this task to the worker.\\n"
-                f"- Include these instructions for the worker:\\n"
-                f"  - Search archival memory for [monitoring:seen:{task_name}] entries to avoid reporting duplicates.\\n"
-                f"  - For each NEW result, insert TWO archival entries:\\n"
-                f"    1. [monitoring:result:{task_name}] <full details including title, price, link, key attributes>\\n"
-                f"    2. [monitoring:seen:{task_name}] <unique identifier like URL or listing ID>\\n"
-                f"  - If no new results, say so.\\n"
-                f"  - Always include links/URLs.\\n"
-                f"- After the worker responds, surface any new/notable results to the user immediately with full details.\\n"
-                f"- If the worker found nothing new, briefly note it or stay silent."
-            )
-
-            # Build the task payload
-            payload = {
+            data["tasks"][task_name] = {
                 "task_name": task_name,
                 "target_agent_tags": tags,
                 "monitoring_prompt": monitoring_prompt,
                 "cron_expression": schedule_cron,
                 "created_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
-                "full_delegation_prompt": full_prompt,
             }
 
-            # Store in archival memory with tags
-            _letta_request("POST", f"/v1/agents/{self_agent_id}/archival-memory", body={
-                "text": f"[monitoring:task:{task_name}] " + json.dumps(payload),
-                "tags": ["monitoring-task", task_name],
-            })
+            try:
+                _save_monitoring_block(block_id, data)
+            except ValueError as e:
+                del data["tasks"][task_name]
+                return f"Error: {e}"
 
             return (
                 f"Monitoring task created successfully.\\n"
                 f"  Task name: {task_name}\\n"
-                f"  Stored in: archival memory (tagged: monitoring-task, {task_name})\\n"
+                f"  Stored in: monitoring memory block\\n"
                 f"  Delegates to worker with tags: {tags}\\n"
                 f"  Cron (reference): {schedule_cron}\\n\\n"
-                f"This task will execute on every heartbeat. The PA will search archival "
-                f"memory for monitoring tasks and delegate each one to the appropriate worker."
+                f"This task will execute on every heartbeat. The PA reads the monitoring "
+                f"block and delegates each task to the appropriate worker."
             )
 
         elif action == "list":
@@ -158,50 +172,22 @@ def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str 
             if not self_agent_id:
                 return "Error: Could not find own agent ID."
 
-            # Search archival for monitoring task entries
-            results = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory",
-                                     query={"search": "[monitoring:task:", "limit": "50"})
+            block_id, data = _get_monitoring_block(self_agent_id)
+            if not block_id:
+                return "Error: Could not find monitoring memory block."
 
-            # Filter to entries that have the monitoring-task tag
-            tasks = []
-            for entry in results:
-                entry_tags = entry.get("tags", [])
-                if "monitoring-task" in entry_tags:
-                    text = entry.get("text", "")
-                    # Parse JSON from after the prefix
-                    try:
-                        json_start = text.index("{")
-                        payload = json.loads(text[json_start:])
-                        tasks.append({
-                            "entry_id": entry.get("id", "unknown"),
-                            "task_name": payload.get("task_name", "unknown"),
-                            "target_tags": payload.get("target_agent_tags", []),
-                            "cron": payload.get("cron_expression", "unknown"),
-                            "created_at": payload.get("created_at", "unknown"),
-                            "prompt_preview": payload.get("monitoring_prompt", "")[:100],
-                        })
-                    except (ValueError, json.JSONDecodeError):
-                        tasks.append({
-                            "entry_id": entry.get("id", "unknown"),
-                            "task_name": "parse-error",
-                            "target_tags": [],
-                            "cron": "unknown",
-                            "created_at": "unknown",
-                            "prompt_preview": text[:100],
-                        })
-
+            tasks = data.get("tasks", {})
             if not tasks:
                 return "No active monitoring tasks found."
 
             lines = [f"Active monitoring tasks ({len(tasks)}):\\n"]
-            for t in tasks:
+            for name, t in tasks.items():
                 lines.append(
-                    f"  - Task: {t['task_name']}\\n"
-                    f"    Entry ID: {t['entry_id']}\\n"
-                    f"    Worker tags: {t['target_tags']}\\n"
-                    f"    Cron (reference): {t['cron']}\\n"
-                    f"    Created: {t['created_at']}\\n"
-                    f"    Prompt: {t['prompt_preview']}...\\n"
+                    f"  - Task: {name}\\n"
+                    f"    Worker tags: {t.get('target_agent_tags', [])}\\n"
+                    f"    Cron (reference): {t.get('cron_expression', 'unknown')}\\n"
+                    f"    Created: {t.get('created_at', 'unknown')}\\n"
+                    f"    Prompt: {t.get('monitoring_prompt', '')[:100]}...\\n"
                 )
             return "\\n".join(lines)
 
@@ -213,32 +199,17 @@ def manage_monitoring_task(action: str, task_name: str = "", schedule_cron: str 
             if not self_agent_id:
                 return "Error: Could not find own agent ID."
 
-            # Search for entries tagged with this task name
-            resp = _letta_request("GET", f"/v1/agents/{self_agent_id}/archival-memory/search",
-                                  query={"query": task_name, "tags": ["monitoring-task", task_name], "tag_match_mode": "all"})
-            results = resp.get("results", []) if isinstance(resp, dict) else resp
+            block_id, data = _get_monitoring_block(self_agent_id)
+            if not block_id:
+                return "Error: Could not find monitoring memory block."
 
-            if not results:
+            if task_name not in data.get("tasks", {}):
                 return f"Error: No monitoring task named \\"{task_name}\\" found."
 
-            deleted_count = 0
-            for entry in results:
-                try:
-                    entry_id = entry.get("id")
-                    if entry_id:
-                        _letta_request("DELETE", f"/v1/agents/{self_agent_id}/archival-memory/{entry_id}")
-                        deleted_count += 1
-                except Exception:
-                    pass
+            del data["tasks"][task_name]
+            _save_monitoring_block(block_id, data)
 
-            if deleted_count == 0:
-                return f"Error: Found entries but could not delete them."
-
-            return (
-                f"Monitoring task \\"{task_name}\\" deleted ({deleted_count} archival entry/entries removed).\\n"
-                f"Note: Historical results ([monitoring:result:{task_name}] and [monitoring:seen:{task_name}]) "
-                f"in worker archival memory are preserved."
-            )
+            return f"Monitoring task \\"{task_name}\\" deleted from monitoring block."
 
         else:
             return f"Error: Unknown action \\"{action}\\". Use \\"create\\", \\"list\\", or \\"delete\\"."
@@ -426,23 +397,22 @@ clear description. The coding agent has skills that guide it on best practices.
 
 MONITORING TASKS (via manage_monitoring_task):
 
-Use this tool to set up recurring monitoring jobs. Monitoring task definitions are
-stored in YOUR archival memory (tagged "monitoring-task") and executed during
-heartbeats. There is no schedule API — tasks run on every heartbeat.
+Use this tool to set up recurring monitoring jobs. Task definitions are stored
+in your monitoring memory block as JSON. There is no schedule API — tasks run
+on every heartbeat.
 
 When creating a task, provide: task_name, schedule_cron (stored for reference),
-target_agent_tags, and monitoring_prompt. The tool stores the full delegation
-prompt in archival memory. On each heartbeat, you search archival for these
-entries and delegate each one to the appropriate worker.
+target_agent_tags, and monitoring_prompt.
 
 HEARTBEAT MESSAGES:
 You will periodically receive [HEARTBEAT] messages. When you do:
-1. Search your archival memory for "[monitoring:task:" to find active monitoring tasks.
-   For each task found, parse the JSON payload and delegate to the appropriate worker
-   using send_message_to_agents_matching_tags with the full_delegation_prompt.
+1. Check your monitoring block. If it contains tasks (JSON with a non-empty
+   "tasks" object), for each task build a delegation message from its
+   monitoring_prompt and send it to the worker via
+   send_message_to_agents_matching_tags using the task's target_agent_tags.
+   Prefix the message with [MONITORING TASK: <task_name>].
+   After the worker responds, surface any new results to the user.
 2. Check your TODO block. If there are actionable items, pick one and work on it.
-   After completing an item, mark it [DONE] and archive it to archival memory
-   with tag [todo-history], then remove it from the block.
 3. If there are no monitoring tasks and the TODO block is empty, stay silent.
 
 You and the user can both add items to the TODO block. When the user asks you

@@ -358,47 +358,7 @@ Recent Activity:
 - (System initialized)
 """.strip()
 
-MONITORING_DEFAULT = """# Monitoring Task Instructions
-
-## For the Personal Assistant
-
-You have a manage_monitoring_task tool for setting up recurring monitoring jobs.
-Task definitions are stored in YOUR archival memory (tagged "monitoring-task")
-and executed during heartbeats. There is no schedule API — all tasks run on
-every heartbeat.
-
-### Creating a task
-Call manage_monitoring_task(action="create", ...) with:
-- task_name: short unique ID (e.g., "house-search")
-- schedule_cron: cron expression stored for reference (e.g., "0 */2 * * *")
-- target_agent_tags: comma-separated worker tags (e.g., "worker,research")
-- monitoring_prompt: detailed search instructions and criteria
-
-The tool stores a JSON payload in archival memory with tags ["monitoring-task", task_name].
-
-### Executing tasks (during heartbeats)
-On each [HEARTBEAT], search archival for "[monitoring:task:" entries. For each one:
-1. Parse the JSON payload from the entry text.
-2. Use send_message_to_agents_matching_tags to delegate the full_delegation_prompt
-   to the worker identified by target_agent_tags.
-3. Surface any new results to the user.
-
-### Managing tasks
-- action="list" — show all active monitoring tasks from archival memory
-- action="delete" with task_name — remove the task's archival entry
-
-## For Worker Agents
-
-When you receive a message prefixed with [MONITORING TASK: <task_name>]:
-1. Read the requirements/criteria in the prompt.
-2. Search archival for [monitoring:seen:<task_name>] to know what was already reported.
-3. Use web_search and fetch_webpage to find matching items.
-4. For each NEW match, insert two archival entries:
-   - [monitoring:result:<task_name>] <title, price, key details, URL>
-   - [monitoring:seen:<task_name>] <unique ID or URL>
-5. If no new matches, do not insert any entries.
-6. Include links/URLs for all results. The PA will surface results to the user directly.
-""".strip()
+MONITORING_DEFAULT = '{"tasks": {}}'
 
 
 TODO_DEFAULT = """# TODO / Roadmap
@@ -449,7 +409,7 @@ def create_shared_blocks(client: Letta) -> dict[str, str]:
     monitoring_id, monitoring_created = find_or_create_block(
         client,
         label="monitoring",
-        description="Monitoring task instructions for scheduled search jobs",
+        description="JSON registry of active monitoring tasks",
         default_value=MONITORING_DEFAULT,
     )
     status = "Created" if monitoring_created else "Found existing"

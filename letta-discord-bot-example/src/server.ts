@@ -332,8 +332,10 @@ async function startHeartbeat() {
           role: "user" as const,
           content:
             '[HEARTBEAT] This is a scheduled check-in.\n' +
-            'First, search your archival memory for "[monitoring:task:" to find active monitoring tasks. ' +
-            'For each task found, parse the JSON and delegate to the appropriate worker.\n' +
+            'First, check your monitoring block for active tasks. If it contains tasks ' +
+            '(JSON with non-empty "tasks" object), delegate each one to the appropriate worker ' +
+            'using send_message_to_agents_matching_tags with the task monitoring_prompt. ' +
+            'Prefix each delegation with [MONITORING TASK: <task_name>].\n' +
             'Then, review your TODO block. If there are actionable items, pick one and work on it.\n' +
             'If there are no monitoring tasks and the TODO block is empty, stay silent.'
         };
