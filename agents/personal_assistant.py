@@ -69,7 +69,7 @@ def _get_monitoring_block(agent_id):
     If the block contains non-JSON content (e.g. old instructions),
     returns an empty tasks dict — the caller can overwrite on save.
     """
-    blocks = _letta_request("GET", f"/v1/agents/{agent_id}/blocks/")
+    blocks = _letta_request("GET", f"/v1/agents/{agent_id}/core-memory/blocks")
     for block in blocks:
         if block.get("label") == "monitoring":
             block_id = block["id"]
