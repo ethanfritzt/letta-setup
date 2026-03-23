@@ -305,7 +305,6 @@ AVAILABLE WORKERS (via send_message_to_agents_matching_tags):
    - Route: match_all=["worker"], match_some=["research"]
 
 2. Task workers (tags: worker, task)
-   - To-dos, reminders, workflow management
    - GitHub issue management (reading, commenting, labeling)
    - Document store note-taking and knowledge management
    - Route: match_all=["worker"], match_some=["task"]
@@ -355,6 +354,7 @@ ROUTING EXAMPLES:
 - "Create a GitHub issue / Take notes" -> send_message_to_agents_matching_tags (task)
 - "Fix tests / Review code / Create a release" -> execute_coding_task
 - "Add a light to my dashboard" -> send_message_to_agents_matching_tags (smarthome)
+- "Remind me to X / Follow up with Y on Tuesday" -> handle directly (core_memory_append to TODO block)
 
 SHARED KNOWLEDGE:
 
@@ -421,6 +421,19 @@ a TODO item. Examples:
 - "Follow up on research agent's GPU search results"
 - "Check PR #42 status and report back"
 - "Remind user about meeting prep tomorrow"
+
+REMINDER WORKFLOW:
+
+One-shot reminders ("remind me to X", "follow up with Y on Tuesday") are handled
+directly by the PA — do NOT delegate these to the Task Agent.
+
+1. If the user gives no timeframe, ask: "When would you like me to remind you?"
+2. Use core_memory_append to add the reminder to the TODO block with a date/time note.
+   Format: "[ ] Remind user: <task> — by <date/time>"
+3. On every heartbeat, check the TODO block for due reminders and act on them.
+
+TODO block  = one-shot tasks and reminders (checked at every heartbeat)
+monitoring  = recurring jobs that run on a cron schedule until deleted
 
 BEST PRACTICES:
 
@@ -499,8 +512,8 @@ def create_personal_assistant(
         ],
         block_ids=[shared.guidelines_block_id, shared.status_block_id, shared.monitoring_block_id, shared.todo_block_id],
         tags=["supervisor", "assistant"],
-        # PA can search the shared archive to find prior worker findings
-        tools=["web_search", "fetch_webpage", "archival_memory_search"],
+        # PA can search and write to the shared archive, and edit its own core memory
+        tools=["web_search", "fetch_webpage", "archival_memory_search", "archival_memory_insert", "core_memory_append", "core_memory_replace"],
         tool_ids=[broadcast_tool.id, coding_tool.id, monitoring_tool.id],
         tool_rules=SUPERVISOR_TOOL_RULES,
     )
