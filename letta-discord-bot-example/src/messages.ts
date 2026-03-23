@@ -22,6 +22,10 @@ const THREAD_CONTEXT_ENABLED = process.env.LETTA_THREAD_CONTEXT_ENABLED !== 'fal
 const THREAD_MESSAGE_LIMIT = parseInt(process.env.LETTA_THREAD_MESSAGE_LIMIT || '50', 10);
 const REPLY_IN_THREADS = process.env.REPLY_IN_THREADS === 'true';
 const ENABLE_USER_BLOCKS = process.env.ENABLE_USER_BLOCKS === 'true';
+// When false (default), intermediate send_message calls and tool-call status messages
+// are suppressed — only the final send_message reply reaches Discord.
+// Set to 'true' to restore the old behaviour (show all status / intermediate messages).
+const SHOW_INTERMEDIATE_MESSAGES = process.env.SHOW_INTERMEDIATE_MESSAGES === 'true';
 // User block label prefix - defaults to /<agent_id>/discord/users/ if not set
 const USER_BLOCK_LABEL_PREFIX = process.env.USER_BLOCK_LABEL_PREFIX || 
   (AGENT_ID ? `/${AGENT_ID}/discord/users/` : '/discord/users/');
@@ -826,6 +830,12 @@ const processStream = async (
     }
   };
 
+  // Buffer for assistant_message chunks.
+  // When SHOW_INTERMEDIATE_MESSAGES is false (default) we only send the last one,
+  // which is the agent's final answer.  All intermediate send_message() calls are
+  // collected here and discarded except for the tail.
+  const pendingMessages: string[] = [];
+
   try {
     for await (const chunk of response) {
       // Handle different message types that might be returned
@@ -834,7 +844,13 @@ const processStream = async (
           case 'assistant_message':
             console.log('🗣️ Assistant message:', chunk);
             if ('content' in chunk && typeof chunk.content === 'string') {
-              await sendAsyncMessage(chunk.content);
+              if (SHOW_INTERMEDIATE_MESSAGES) {
+                // Legacy behaviour: send every send_message() call immediately.
+                await sendAsyncMessage(chunk.content);
+              } else {
+                // Buffer — we will send only the last one after the stream ends.
+                pendingMessages.push(chunk.content);
+              }
             } else {
               console.log('⚠️ Assistant message missing content or not a string:', typeof chunk.content, chunk);
             }
@@ -847,35 +863,40 @@ const processStream = async (
             break;
           case 'tool_call_message': {
             console.log('🔧 Tool call:', chunk);
-            const toolName: string = chunk.tool_call?.name ?? '';
-            let statusMsg: string | null = null;
 
-            if (toolName === 'send_message_to_agents_matching_tags') {
-              // Detect which worker is being called from match_some tags
-              try {
-                const args = typeof chunk.tool_call?.arguments === 'string'
-                  ? JSON.parse(chunk.tool_call.arguments)
-                  : chunk.tool_call?.arguments ?? {};
-                const matchSome: string[] = args.match_some ?? [];
-                const workerLabel = matchSome.includes('research') ? 'Research'
-                  : matchSome.includes('coding') ? 'Coding'
-                  : matchSome.includes('task') ? 'Task'
-                  : matchSome.includes('smarthome') ? 'Smart Home'
-                  : 'Worker';
-                statusMsg = `_Delegating to ${workerLabel} agent..._`;
-              } catch {
-                statusMsg = '_Delegating to worker agent..._';
+            // Tool-call status messages are suppressed by default.
+            // Set SHOW_INTERMEDIATE_MESSAGES=true to re-enable them.
+            if (SHOW_INTERMEDIATE_MESSAGES) {
+              const toolName: string = chunk.tool_call?.name ?? '';
+              let statusMsg: string | null = null;
+
+              if (toolName === 'send_message_to_agents_matching_tags') {
+                // Detect which worker is being called from match_some tags
+                try {
+                  const args = typeof chunk.tool_call?.arguments === 'string'
+                    ? JSON.parse(chunk.tool_call.arguments)
+                    : chunk.tool_call?.arguments ?? {};
+                  const matchSome: string[] = args.match_some ?? [];
+                  const workerLabel = matchSome.includes('research') ? 'Research'
+                    : matchSome.includes('coding') ? 'Coding'
+                    : matchSome.includes('task') ? 'Task'
+                    : matchSome.includes('smarthome') ? 'Smart Home'
+                    : 'Worker';
+                  statusMsg = `_Delegating to ${workerLabel} agent..._`;
+                } catch {
+                  statusMsg = '_Delegating to worker agent..._';
+                }
+              } else if (toolName === 'web_search') {
+                statusMsg = '_Searching the web..._';
+              } else if (toolName === 'fetch_webpage') {
+                statusMsg = '_Fetching page..._';
+              } else if (toolName === 'archival_memory_search') {
+                statusMsg = '_Searching memory..._';
               }
-            } else if (toolName === 'web_search') {
-              statusMsg = '_Searching the web..._';
-            } else if (toolName === 'fetch_webpage') {
-              statusMsg = '_Fetching page..._';
-            } else if (toolName === 'archival_memory_search') {
-              statusMsg = '_Searching memory..._';
-            }
 
-            if (statusMsg) {
-              await sendAsyncMessage(statusMsg);
+              if (statusMsg) {
+                await sendAsyncMessage(statusMsg);
+              }
             }
             break;
           }
@@ -894,6 +915,12 @@ const processStream = async (
       } else {
         console.log('❓ Chunk without message_type:', chunk);
       }
+    }
+    // After the stream ends, flush the final buffered message (if any).
+    if (!SHOW_INTERMEDIATE_MESSAGES && pendingMessages.length > 0) {
+      const finalMessage = pendingMessages[pendingMessages.length - 1];
+      console.log(`🗣️ Sending final assistant message (${pendingMessages.length} collected, sending last)`);
+      await sendAsyncMessage(finalMessage);
     }
   } catch (error) {
     console.error('❌ Error processing stream:', error);
