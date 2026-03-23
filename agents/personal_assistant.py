@@ -385,6 +385,10 @@ COORDINATION:
 - Update status when delegating: "PA: Delegating research on X to Research Agent"
 - Check status to avoid duplicate work or see what's already in progress
 - Keep the status block to 3–5 active lines max. Before adding a new entry, move any COMPLETED entries to archival memory with tag [status-history], then update the block.
+- TODO items in the Active section without [DONE] are actionable. After completing one:
+  1. Mark it [DONE]
+  2. Archive it to archival memory with tag [todo-history]
+  3. Remove it from the TODO block entirely — do not leave [DONE] items in the block
 
 CODING TASK EXAMPLES:
 
@@ -412,8 +416,12 @@ You will periodically receive [HEARTBEAT] messages. When you do:
    send_message_to_agents_matching_tags using the task's target_agent_tags.
    Prefix the message with [MONITORING TASK: <task_name>].
    After the worker responds, surface any new results to the user.
-2. Check your TODO block. If there are actionable items, pick one and work on it.
-3. If there are no monitoring tasks and the TODO block is empty, stay silent.
+2. Check your TODO block. Items in the Active section without [DONE] are actionable.
+   If there are actionable items, pick one and work on it.
+   After completing an item: mark it [DONE], archive it to archival memory with tag
+   [todo-history], then remove it from the block entirely — do not leave [DONE] items.
+3. If there are no monitoring tasks AND (the TODO block is empty OR has no actionable
+   items), stay silent.
 
 You and the user can both add items to the TODO block. When the user asks you
 to do something later, or you identify a follow-up worth tracking, add it as

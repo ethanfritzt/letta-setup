@@ -336,8 +336,11 @@ async function startHeartbeat() {
             '(JSON with non-empty "tasks" object), delegate each one to the appropriate worker ' +
             'using send_message_to_agents_matching_tags with the task monitoring_prompt. ' +
             'Prefix each delegation with [MONITORING TASK: <task_name>].\n' +
-            'Then, review your TODO block. If there are actionable items, pick one and work on it.\n' +
-            'If there are no monitoring tasks and the TODO block is empty, stay silent.'
+            'Then, review your TODO block. Items in the Active section without [DONE] are actionable. ' +
+            'If there are actionable items, pick one and work on it. ' +
+            'After completing an item, mark it [DONE], archive it to archival memory with tag [todo-history], ' +
+            'then remove it from the block — do not leave [DONE] items in the block.\n' +
+            'If there are no monitoring tasks AND (the TODO block is empty OR has no actionable items), stay silent.'
         };
 
         console.log(`💓 Sending heartbeat to PA (agent=${AGENT_ID})`);
