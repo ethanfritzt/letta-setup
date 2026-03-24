@@ -9,9 +9,18 @@ import * as path from "path";
 // Discord message length limit
 const DISCORD_MESSAGE_LIMIT = 2000;
 
-// If the token is not set, just use a dummy value
+// Validate LETTA_API_KEY at startup — fail fast rather than silently falling back
+// to the placeholder value, which would cause confusing auth failures later.
+const LETTA_API_KEY = process.env.LETTA_API_KEY;
+if (!LETTA_API_KEY || LETTA_API_KEY === 'your_letta_api_key') {
+  throw new Error(
+    'LETTA_API_KEY environment variable is not set or still contains the placeholder value. ' +
+    'Set a valid API key in your .env file before starting the bot.'
+  );
+}
+
 const client = new Letta({
-  apiKey: process.env.LETTA_API_KEY || 'your_letta_api_key',
+  apiKey: LETTA_API_KEY,
   baseURL: process.env.LETTA_BASE_URL || 'https://api.letta.com',
 });
 const AGENT_ID = process.env.LETTA_AGENT_ID;
