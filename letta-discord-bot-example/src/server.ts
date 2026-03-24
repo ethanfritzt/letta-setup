@@ -323,8 +323,10 @@ async function startHeartbeat() {
         }
 
         const Letta = (await import('@letta-ai/letta-client')).default;
+        // LETTA_API_KEY is validated at startup in messages.ts (imported above);
+        // use a non-null assertion here since we know it is set.
         const lettaClient = new Letta({
-          apiKey: process.env.LETTA_API_KEY || 'your_letta_api_key',
+          apiKey: process.env.LETTA_API_KEY!,
           baseURL: process.env.LETTA_BASE_URL || 'http://localhost:8283',
         });
 
