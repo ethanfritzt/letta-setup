@@ -340,7 +340,12 @@ async function startHeartbeat() {
             'If there are actionable items, pick one and work on it. ' +
             'After completing an item, mark it [DONE], archive it to archival memory with tag [todo-history], ' +
             'then remove it from the block — do not leave [DONE] items in the block.\n' +
-            'If there are no monitoring tasks AND (the TODO block is empty OR has no actionable items), stay silent.'
+            'Next, clean up the status block: scan every line for entries starting with "COMPLETED:". ' +
+            'For each COMPLETED line found: (1) call archival_memory_insert with the full line and tag [status-history], ' +
+            '(2) remove that line from the status block via core_memory_replace. ' +
+            'Keep the status block to 3–5 active (non-COMPLETED) lines max.\n' +
+            'If there are no monitoring tasks AND (the TODO block is empty OR has no actionable items) ' +
+            'AND (no COMPLETED status lines were cleaned up), stay silent.'
         };
 
         console.log(`💓 Sending heartbeat to PA (agent=${AGENT_ID})`);
